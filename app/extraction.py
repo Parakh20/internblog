@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 MAX_OUTPUT_TOKENS = 2048
 REQUEST_TIMEOUT = 60.0
+PARSE_ATTEMPTS = 2
 
 
 class InternshipExtraction(BaseModel):
@@ -66,6 +67,18 @@ def extract_posting(
         f"Posted at (GMT): {post_date}\n"
         f"Post HTML content:\n{content_html}"
     )
+    for attempt in range(1, PARSE_ATTEMPTS + 1):
+        parsed = _attempt_extraction(client, model, prompt, title)
+        if parsed is not None:
+            return parsed
+        if attempt < PARSE_ATTEMPTS:
+            logger.info("retrying extraction for post %r (attempt %d)", title, attempt + 1)
+    return None
+
+
+def _attempt_extraction(
+    client: openai.OpenAI, model: str, prompt: str, title: str
+) -> InternshipExtraction | None:
     try:
         response = client.chat.completions.create(
             model=model,
@@ -89,7 +102,10 @@ def extract_posting(
         logger.exception("unexpected extraction failure for post %r", title)
         return None
 
-    raw = response.choices[0].message.content or ""
+    raw = (response.choices[0].message.content or "").strip()
+    if raw.startswith("```"):
+        raw = raw.strip("`")
+        raw = raw.removeprefix("json").strip()
     try:
         return InternshipExtraction.model_validate_json(raw)
     except ValidationError:
