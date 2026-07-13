@@ -1,0 +1,40 @@
+# Secrets and credentials
+.env
+*.env
+!.env.example
+token*.json
+credentials*.json
+storage_state.json
+cookies*.json
+
+# Browser profiles and session data
+browser_profile/
+.playwright/
+whatsapp_session/
+.wwebjs_auth/
+.wwebjs_cache/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+
+# Data and logs
+data/
+snapshots/
+logs/
+*.log
+*.sqlite
+*.db
+
+# Editor
+.vscode/
+.idea/
