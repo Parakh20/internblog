@@ -85,6 +85,27 @@ class BlogClient:
             logger.info("session cookie loaded from storage state")
         return self._cookie
 
+    def _persist_rotated_cookie(self, resp: httpx.Response) -> None:
+        """mod_auth_openidc rotates the session cookie; persist new values.
+
+        Only successful responses are considered, so the deletion cookie the
+        server sends alongside an SSO redirect is never written back.
+        """
+        rotated = resp.cookies.get(SESSION_COOKIE_NAME)
+        if not rotated or rotated == self._cookie:
+            return
+        try:
+            state = json.loads(self.storage_state_path.read_text())
+            for cookie in state.get("cookies", []):
+                if cookie.get("name") == SESSION_COOKIE_NAME:
+                    cookie["value"] = rotated
+            self.storage_state_path.write_text(json.dumps(state))
+            self._cookie = rotated
+            self._cookie_mtime = self.storage_state_path.stat().st_mtime
+            logger.info("rotated session cookie persisted")
+        except Exception:
+            logger.exception("failed to persist rotated cookie")
+
     def fetch_posts(self) -> FetchResult:
         """Fetch all posts, following REST pagination.
 
@@ -122,6 +143,7 @@ class BlogClient:
                 if verdict == "error":
                     raise RuntimeError(f"unexpected HTTP {resp.status_code} on page {page}")
 
+                self._persist_rotated_cookie(resp)
                 batch = resp.json()
                 if not isinstance(batch, list):
                     raise RuntimeError(f"expected JSON list, got {type(batch).__name__}")

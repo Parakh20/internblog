@@ -6,6 +6,7 @@ endpoint and logs always reflect reality.
 
 import json
 import logging
+import time
 
 import anthropic
 from sqlalchemy.orm import Session
@@ -15,10 +16,31 @@ from app.change_detection import ChangeSet, KnownPost, detect_changes, post_hash
 from app.config import settings
 from app.extraction import dedup_key, extract_posting
 from app.models import Extraction, FetchLog, Post
+from app.session_refresh import silent_refresh
 from app.session_state import SessionMonitor
 from app.snapshots import save_snapshot
 
 logger = logging.getLogger(__name__)
+
+REFRESH_COOLDOWN_SECONDS = 600
+_last_refresh_attempt = 0.0
+
+
+def _try_silent_refresh() -> bool:
+    """Attempt a credential-free session refresh, at most once per cooldown."""
+    global _last_refresh_attempt
+    now = time.monotonic()
+    if now - _last_refresh_attempt < REFRESH_COOLDOWN_SECONDS:
+        logger.info("skipping silent refresh, within cooldown")
+        return False
+    _last_refresh_attempt = now
+    from app.config import PROJECT_ROOT
+
+    return silent_refresh(
+        PROJECT_ROOT / "browser_profile",
+        settings.blog_base_url + "/",
+        settings.storage_state_path,
+    )
 
 
 def load_known_posts(db: Session) -> dict[int, KnownPost]:
@@ -51,7 +73,7 @@ def upsert_post(db: Session, wp_post: dict) -> Post:
     return row
 
 
-def run_extraction(db: Session, row: Post, wp_post: dict) -> None:
+def run_extraction(db: Session, row: Post) -> None:
     if not settings.extraction_enabled:
         return
     if not settings.anthropic_api_key:
@@ -98,7 +120,7 @@ def run_extraction(db: Session, row: Post, wp_post: dict) -> None:
 def apply_changes(db: Session, changes: ChangeSet) -> None:
     for wp_post in changes.new + changes.modified + changes.restored:
         row = upsert_post(db, wp_post)
-        run_extraction(db, row, wp_post)
+        run_extraction(db, row)
     for wp_id in changes.removed_wp_ids:
         row = db.query(Post).filter_by(wp_id=wp_id).one_or_none()
         if row is not None:
@@ -113,11 +135,21 @@ def run_cycle(client: BlogClient, monitor: SessionMonitor, db_factory) -> None:
         try:
             result = client.fetch_posts()
         except (SessionExpiredError, CookieLoadError) as e:
-            monitor.mark_expired(str(e))
-            log_row.status = "session_expired"
-            log_row.session_alive = False
-            log_row.error = str(e)
-            return
+            logger.warning("session check failed (%s), attempting silent refresh", e)
+            refreshed = _try_silent_refresh()
+            retried = False
+            if refreshed:
+                try:
+                    result = client.fetch_posts()
+                    retried = True
+                except (SessionExpiredError, CookieLoadError) as e2:
+                    e = e2
+            if not retried:
+                monitor.mark_expired(str(e))
+                log_row.status = "session_expired"
+                log_row.session_alive = False
+                log_row.error = str(e)
+                return
         except Exception as e:
             logger.exception("fetch failed")
             log_row.status = "fetch_error"

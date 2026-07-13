@@ -28,17 +28,19 @@ STABLE_CHECKS_REQUIRED = 3
 
 
 def is_logged_in(page) -> bool:
-    """Consider the session live when the browser sits on the blog URL
-    and the page is not an SSO or login form."""
+    """Consider the session live when the browser sits anywhere on the
+    placements domain (post-login redirect lands on the portal root, not
+    the blog) and the page is not a login form."""
     url = page.url
-    if not url.startswith("https://campus.placements.iitb.ac.in/blog"):
+    if "sso.iitb.ac.in" in url:
+        return False
+    if not url.startswith("https://campus.placements.iitb.ac.in"):
         return False
     try:
         content = page.content().lower()
     except Exception:
         return False
-    login_markers = ["sso login", "type=\"password\"", "gymkhana sso", "log in to continue"]
-    return not any(marker in content for marker in login_markers)
+    return 'type="password"' not in content
 
 
 def main() -> int:
@@ -61,6 +63,7 @@ def main() -> int:
             if is_logged_in(page):
                 consecutive_ok += 1
                 if consecutive_ok >= STABLE_CHECKS_REQUIRED:
+                    page.goto(BLOG_URL, wait_until="domcontentloaded")
                     context.storage_state(path=str(STORAGE_STATE_PATH))
                     print(f"Login detected. Session saved to {STORAGE_STATE_PATH}")
                     print(f"Persistent profile kept at {PROFILE_DIR}")
