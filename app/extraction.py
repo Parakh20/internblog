@@ -1,19 +1,22 @@
-"""Turn raw blog post HTML into structured internship data via the Claude API.
+"""Turn raw blog post HTML into structured internship data via an LLM.
 
-Uses client.messages.parse with a Pydantic schema so the response is
-guaranteed to validate. Extraction failures are logged and return None;
-the pipeline stores the post either way so nothing is lost.
+Uses any OpenAI-compatible API (OpenRouter by default, Groq works with the
+same code via LLM_BASE_URL). The model returns JSON which is validated with
+Pydantic; validation failures are logged and return None. The pipeline
+stores the post either way so nothing is lost.
 """
 
 import hashlib
+import json
 import logging
 
-import anthropic
-from pydantic import BaseModel, Field
+import openai
+from pydantic import BaseModel, Field, ValidationError
 
 logger = logging.getLogger(__name__)
 
-MAX_OUTPUT_TOKENS = 4096
+MAX_OUTPUT_TOKENS = 2048
+REQUEST_TIMEOUT = 60.0
 
 
 class InternshipExtraction(BaseModel):
@@ -40,7 +43,9 @@ SYSTEM_PROMPT = (
     "Posts may be job announcements, pre-placement talk notices, shortlist results, "
     "or administrative updates. Extract only what the post states. Never invent values. "
     "Assume dates without a timezone are Asia/Kolkata (IST, UTC+05:30). "
-    "The blog year context: posts are for the 2026-27 internship season."
+    "The blog year context: posts are for the 2026-27 internship season.\n\n"
+    "Respond with a single JSON object matching this schema, no other text:\n"
+    + json.dumps(InternshipExtraction.model_json_schema())
 )
 
 
@@ -49,8 +54,12 @@ def dedup_key(company: str | None, role: str | None, deadline: str | None) -> st
     return hashlib.sha256(normalized.encode()).hexdigest()
 
 
+def make_llm_client(base_url: str, api_key: str) -> openai.OpenAI:
+    return openai.OpenAI(base_url=base_url, api_key=api_key, timeout=REQUEST_TIMEOUT)
+
+
 def extract_posting(
-    client: anthropic.Anthropic, model: str, title: str, content_html: str, post_date: str
+    client: openai.OpenAI, model: str, title: str, content_html: str, post_date: str
 ) -> InternshipExtraction | None:
     prompt = (
         f"Post title: {title}\n"
@@ -58,27 +67,31 @@ def extract_posting(
         f"Post HTML content:\n{content_html}"
     )
     try:
-        response = client.messages.parse(
+        response = client.chat.completions.create(
             model=model,
             max_tokens=MAX_OUTPUT_TOKENS,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": prompt}],
-            output_format=InternshipExtraction,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
         )
-    except anthropic.RateLimitError:
+    except openai.RateLimitError:
         logger.warning("extraction rate limited for post %r", title)
         return None
-    except anthropic.APIStatusError as e:
+    except openai.APIStatusError as e:
         logger.error("extraction API error %s for post %r: %s", e.status_code, title, e.message)
         return None
-    except anthropic.APIConnectionError:
+    except openai.APIConnectionError:
         logger.error("extraction network error for post %r", title)
         return None
     except Exception:
         logger.exception("unexpected extraction failure for post %r", title)
         return None
 
-    if response.stop_reason == "refusal":
-        logger.warning("extraction refused for post %r", title)
+    raw = response.choices[0].message.content or ""
+    try:
+        return InternshipExtraction.model_validate_json(raw)
+    except ValidationError:
+        logger.error("extraction returned invalid JSON for post %r: %s", title, raw[:500])
         return None
-    return response.parsed_output

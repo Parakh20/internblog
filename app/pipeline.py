@@ -8,13 +8,12 @@ import json
 import logging
 import time
 
-import anthropic
 from sqlalchemy.orm import Session
 
 from app.blog_client import BlogClient, CookieLoadError, SessionExpiredError
 from app.change_detection import ChangeSet, KnownPost, detect_changes, post_hash
 from app.config import settings
-from app.extraction import dedup_key, extract_posting
+from app.extraction import dedup_key, extract_posting, make_llm_client
 from app.models import Extraction, FetchLog, Post
 from app.session_refresh import silent_refresh
 from app.session_state import SessionMonitor
@@ -76,13 +75,13 @@ def upsert_post(db: Session, wp_post: dict) -> Post:
 def run_extraction(db: Session, row: Post) -> None:
     if not settings.extraction_enabled:
         return
-    if not settings.anthropic_api_key:
-        logger.warning("ANTHROPIC_API_KEY not set, skipping extraction for post %s", row.wp_id)
+    if not settings.llm_api_key:
+        logger.warning("LLM API key not set, skipping extraction for post %s", row.wp_id)
         return
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = make_llm_client(settings.llm_base_url, settings.llm_api_key)
     parsed = extract_posting(
         client,
-        settings.anthropic_model,
+        settings.llm_model,
         title=row.title,
         content_html=row.raw_html,
         post_date=row.date_gmt,

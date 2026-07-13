@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -15,8 +16,12 @@ class Settings(BaseSettings):
 
     database_url: str = f"sqlite:///{PROJECT_ROOT}/data/internblog.db"
 
-    anthropic_api_key: str = ""
-    anthropic_model: str = "claude-opus-4-8"
+    llm_base_url: str = "https://openrouter.ai/api/v1"
+    llm_api_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("LLM_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY"),
+    )
+    llm_model: str = "meta-llama/llama-3.3-70b-instruct:free"
     extraction_enabled: bool = True
 
     storage_state_path: Path = PROJECT_ROOT / "storage_state.json"
