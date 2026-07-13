@@ -1,0 +1,67 @@
+"""SQLAlchemy models for posts, extractions, and fetch logs."""
+
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+
+def utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Post(Base):
+    __tablename__ = "posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    wp_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    slug: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(Text)
+    link: Mapped[str] = mapped_column(Text)
+    date_gmt: Mapped[str] = mapped_column(String(32))
+    modified_gmt: Mapped[str] = mapped_column(String(32))
+    content_hash: Mapped[str] = mapped_column(String(64), index=True)
+    raw_html: Mapped[str] = mapped_column(Text)
+    removed: Mapped[bool] = mapped_column(Boolean, default=False)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    extractions: Mapped[list["Extraction"]] = relationship(back_populates="post")
+
+
+class Extraction(Base):
+    __tablename__ = "extractions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("posts.id"), index=True)
+    dedup_key: Mapped[str] = mapped_column(String(64), index=True)
+    company: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    deadline: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cgpa_cutoff: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    eligible_branches: Mapped[str | None] = mapped_column(Text, nullable=True)
+    stipend: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    application_link: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    post: Mapped["Post"] = relationship(back_populates="extractions")
+
+
+class FetchLog(Base):
+    __tablename__ = "fetch_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    session_alive: Mapped[bool] = mapped_column(Boolean)
+    posts_count: Mapped[int] = mapped_column(Integer, default=0)
+    new_count: Mapped[int] = mapped_column(Integer, default=0)
+    modified_count: Mapped[int] = mapped_column(Integer, default=0)
+    removed_count: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
