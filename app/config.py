@@ -21,7 +21,7 @@ class Settings(BaseSettings):
         default="",
         validation_alias=AliasChoices("LLM_API_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY"),
     )
-    llm_model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    llm_model: str = "openai/gpt-oss-120b:free"
     extraction_enabled: bool = True
 
     storage_state_path: Path = PROJECT_ROOT / "storage_state.json"
