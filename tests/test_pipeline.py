@@ -85,3 +85,87 @@ def test_past_deadline_is_not_upcoming():
 
 def test_unparseable_deadline_is_not_upcoming():
     assert not _is_upcoming("not a date")
+
+
+from app.models import User
+
+
+def test_calendar_push_only_reaches_sync_enabled_users_with_a_refresh_token(db, monkeypatch):
+    pushed = []
+    monkeypatch.setattr(pipeline, "push_calendar_event_for_user", lambda user, extraction, row: pushed.append(user.email))
+
+    synced = User(google_sub="s1", email="synced@example.com", calendar_sync_enabled=True, calendar_refresh_token_encrypted="ct")
+    not_synced = User(google_sub="s2", email="off@example.com", calendar_sync_enabled=False, calendar_refresh_token_encrypted="ct")
+    no_token = User(google_sub="s3", email="notoken@example.com", calendar_sync_enabled=True, calendar_refresh_token_encrypted=None)
+    db.add_all([synced, not_synced, no_token])
+    db.commit()
+
+    extraction = Extraction(company="Acme", category="new_listing", deadline="2027-01-01T00:00:00+05:30")
+    from app.models import Post
+
+    post = Post(wp_id=1, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    pipeline.push_to_all_users(db, extraction, post)
+
+    assert pushed == ["synced@example.com"]
+
+
+def test_telegram_push_only_reaches_users_with_a_chat_id(db, monkeypatch):
+    sent_to = []
+    monkeypatch.setattr(
+        pipeline, "send_or_edit_telegram_for_user",
+        lambda db, user, extraction, message: sent_to.append(user.email),
+    )
+    monkeypatch.setattr(pipeline, "push_calendar_event_for_user", lambda *a: None)
+
+    with_chat = User(google_sub="s4", email="chat@example.com", telegram_chat_id="111")
+    without_chat = User(google_sub="s5", email="nochat@example.com", telegram_chat_id=None)
+    db.add_all([with_chat, without_chat])
+    db.commit()
+
+    extraction = Extraction(company="Acme", category="new_listing", deadline="2027-01-01T00:00:00+05:30")
+    from app.models import Post
+
+    post = Post(wp_id=2, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    pipeline.push_to_all_users(db, extraction, post)
+
+    assert sent_to == ["chat@example.com"]
+
+
+def test_one_users_push_failure_does_not_block_another_users_push(db, monkeypatch):
+    def flaky_calendar_push(user, extraction, row):
+        if user.email == "broken@example.com":
+            raise RuntimeError("revoked token")
+
+    pushed_ok = []
+    monkeypatch.setattr(pipeline, "push_calendar_event_for_user", lambda user, extraction, row: (
+        flaky_calendar_push(user, extraction, row) or pushed_ok.append(user.email)
+    ))
+
+    broken = User(google_sub="s6", email="broken@example.com", calendar_sync_enabled=True, calendar_refresh_token_encrypted="ct")
+    healthy = User(google_sub="s7", email="healthy@example.com", calendar_sync_enabled=True, calendar_refresh_token_encrypted="ct")
+    db.add_all([broken, healthy])
+    db.commit()
+
+    extraction = Extraction(company="Acme", category="new_listing", deadline="2027-01-01T00:00:00+05:30")
+    from app.models import Post
+
+    post = Post(wp_id=3, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    pipeline.push_to_all_users(db, extraction, post)
+
+    assert pushed_ok == ["healthy@example.com"]
+
+
+def test_send_or_edit_telegram_for_user_scopes_group_key_by_user(db, monkeypatch):
+    sent = []
+    monkeypatch.setattr(pipeline, "send_telegram_message", lambda *a: (sent.append(a) or 42))
+    monkeypatch.setattr(pipeline, "edit_telegram_message", lambda *a: (_ for _ in ()).throw(AssertionError("should not edit")))
+
+    user = User(google_sub="s8", email="u@example.com", telegram_chat_id="999")
+    db.add(user)
+    db.commit()
+    extraction = Extraction(company="Acme", category="new_listing")
+
+    pipeline.send_or_edit_telegram_for_user(db, user, extraction, "hi")
+
+    stored = db.query(TelegramNotification).one()
+    assert str(user.id) in stored.group_key

@@ -9,3 +9,4 @@ pydantic-settings>=2.3
 playwright>=1.45
 psycopg2-binary>=2.9
 pytest>=8.0
+authlib>=1.3
