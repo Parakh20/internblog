@@ -24,14 +24,8 @@ from app.extraction import (
     extract_posting,
     make_llm_client,
 )
-from app.crypto import decrypt_token
-from app.google_calendar import (
-    event_id_for,
-    event_id_for_company,
-    get_access_token,
-    upsert_event,
-)
-from app.models import Extraction, FetchLog, Post, TelegramNotification, User
+from app.google_calendar import event_id_for, event_id_for_company, get_access_token, upsert_event
+from app.models import Extraction, FetchLog, Post, TelegramNotification
 from app.notifications import edit_telegram_message, format_notification_message, send_telegram_message
 from app.session_refresh import silent_refresh
 from app.session_state import SessionMonitor
@@ -156,8 +150,27 @@ def run_extraction(db: Session, row: Post) -> None:
     # Only a stated deadline can be stale; a post with no deadline at all
     # (e.g. a listing that doesn't mention one) is never suppressed here.
     is_stale = bool(parsed.deadline) and not _is_upcoming(parsed.deadline)
-    if not is_stale and (parsed.category in NOTIFY_CATEGORIES or parsed.category in CALENDAR_CATEGORIES):
-        push_to_all_users(db, extraction, row)
+    if (
+        parsed.category in NOTIFY_CATEGORIES
+        and not is_stale
+        and settings.telegram_bot_token
+        and settings.telegram_chat_id
+    ):
+        message = format_notification_message(
+            category=parsed.category,
+            company=parsed.company,
+            role=parsed.role,
+            deadline=parsed.deadline,
+            stipend=parsed.stipend,
+        )
+        send_or_edit_telegram(db, extraction, message)
+    if (
+        parsed.category in CALENDAR_CATEGORIES
+        and parsed.deadline
+        and not is_stale
+        and settings.google_calendar_enabled
+    ):
+        push_calendar_event(extraction, row)
 
 
 def send_or_edit_telegram(db: Session, extraction: Extraction, message: str) -> None:
@@ -189,80 +202,35 @@ def send_or_edit_telegram(db: Session, extraction: Extraction, message: str) -> 
     db.commit()
 
 
-def send_or_edit_telegram_for_user(db: Session, user: User, extraction: Extraction, message: str) -> None:
-    """Same edit-in-place behavior as before, but the group key is scoped
-    per user so one user's deadline-extension edit never touches another
-    user's message."""
-    group = NOTIFY_EVENT_GROUP.get(PostCategory(extraction.category))
-    group_key = (
-        f"{user.id}|{extraction.company.strip().lower()}|{group}"
-        if extraction.company and group
-        else None
-    )
-
-    existing = (
-        db.query(TelegramNotification).filter_by(group_key=group_key).one_or_none()
-        if group_key
-        else None
-    )
-    if existing is not None and edit_telegram_message(
-        settings.telegram_bot_token, user.telegram_chat_id, existing.message_id, message
-    ):
-        return
-
-    message_id = send_telegram_message(settings.telegram_bot_token, user.telegram_chat_id, message)
-    if message_id is None or group_key is None:
-        return
-    if existing is not None:
-        existing.message_id = message_id
-    else:
-        db.add(TelegramNotification(group_key=group_key, message_id=message_id))
-    db.commit()
-
-
-def push_calendar_event_for_user(user: User, extraction: Extraction, row: Post) -> None:
-    refresh_token = decrypt_token(user.calendar_refresh_token_encrypted)
+def push_calendar_event(extraction: Extraction, row: Post) -> None:
     access_token = get_access_token(
-        settings.google_oauth_client_id, settings.google_oauth_client_secret, refresh_token
+        settings.google_calendar_client_id,
+        settings.google_calendar_client_secret,
+        settings.google_calendar_refresh_token,
     )
     if access_token is None:
         return
     summary = f"{extraction.company or 'Unknown company'}" + (f" - {extraction.role}" if extraction.role else "")
     group = CALENDAR_EVENT_GROUP.get(PostCategory(extraction.category))
+    # Group by (company, event type) when both are known, so e.g. a
+    # deadline_extension modifies the original new_listing's calendar event
+    # in place instead of creating a duplicate. Falls back to a per-row id
+    # for company-less posts (mock tests, admin notices) which can't be
+    # meaningfully grouped this way anyway.
     event_id = (
         event_id_for_company(extraction.company, group)
         if extraction.company and group
         else event_id_for(extraction.id)
     )
     upsert_event(
-        access_token, user.calendar_id, event_id,
-        summary=summary, description=row.link,
-        start_iso=extraction.deadline, end_iso=extraction.deadline_end,
+        access_token,
+        settings.google_calendar_id,
+        event_id,
+        summary=summary,
+        description=row.link,
+        start_iso=extraction.deadline,
+        end_iso=extraction.deadline_end,
     )
-
-
-def push_to_all_users(db: Session, extraction: Extraction, row: Post) -> None:
-    """Loop over every signed-in user and push this extraction to whichever
-    channels they've opted into. A failure for one user (revoked token, bad
-    chat id) is logged and skipped - it never blocks another user's push or
-    aborts the fetch cycle."""
-    message = None
-    for user in db.query(User).all():
-        if user.calendar_sync_enabled and user.calendar_refresh_token_encrypted:
-            try:
-                push_calendar_event_for_user(user, extraction, row)
-            except Exception:
-                logger.exception("calendar push failed for user %s", user.email)
-        if user.telegram_chat_id:
-            if message is None:
-                message = format_notification_message(
-                    category=PostCategory(extraction.category), company=extraction.company,
-                    role=extraction.role, deadline=extraction.deadline, stipend=extraction.stipend,
-                )
-            try:
-                send_or_edit_telegram_for_user(db, user, extraction, message)
-            except Exception:
-                logger.exception("telegram push failed for user %s", user.email)
 
 
 def apply_changes(db: Session, changes: ChangeSet) -> None:
