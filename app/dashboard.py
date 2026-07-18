@@ -14,12 +14,16 @@ def _badge(ok: bool) -> str:
 
 
 def _fmt_ts(value: str | None) -> str:
-    """For non-blog timestamps (last fetch, extracted-at) which are already
-    stored as UTC-aware datetimes, not the blog's IST convention."""
+    """For non-blog timestamps (last fetch, extracted-at, user join dates)
+    which are stored UTC-aware - converted to IST for display since that's
+    the timezone the user actually reads dates in, same as every other
+    timestamp on these pages."""
     if not value:
         return "-"
     dt = parse_ist(value)
-    return dt.strftime("%Y-%m-%d %H:%M:%S %Z") if dt else value
+    if dt is None:
+        return value
+    return dt.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S IST")
 
 
 def _fmt_ist(value: str | None) -> str:

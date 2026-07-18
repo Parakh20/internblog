@@ -1,4 +1,4 @@
-from app.dashboard import _extraction_row
+from app.dashboard import _extraction_row, _fmt_ts
 
 
 def _row(**overrides):
@@ -18,3 +18,12 @@ def test_extraction_row_navigates_to_post_detail_on_click():
 def test_extraction_row_is_visually_clickable():
     html = _extraction_row(_row())
     assert 'style="cursor:pointer"' in html
+
+
+def test_fmt_ts_converts_utc_to_ist():
+    # 09:58:22 UTC -> 15:28:22 IST (+05:30)
+    assert _fmt_ts("2026-07-18T09:58:22+00:00") == "2026-07-18 15:28:22 IST"
+
+
+def test_fmt_ts_returns_dash_for_missing_value():
+    assert _fmt_ts(None) == "-"
