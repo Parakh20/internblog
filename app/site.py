@@ -168,9 +168,10 @@ def _sanitize_post_html(raw_html: str) -> str:
     outside a conservative allowlist from scraped blog post content before
     it's rendered on our own page - raw_html is fetched content we don't
     fully control, not something we authored."""
-    # Remove script tags and their content
+    # bleach's strip=True drops the <script> tag itself but leaves its text
+    # content behind as inert-looking text, which would still put the
+    # script's source in the rendered page - strip the whole element first.
     cleaned = re.sub(r'<script[^>]*>.*?</script>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
-    # Then sanitize remaining HTML
     return bleach.clean(cleaned, tags=_ALLOWED_POST_TAGS, attributes=_ALLOWED_POST_ATTRS, strip=True)
 
 
