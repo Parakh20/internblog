@@ -23,7 +23,7 @@ from app.models import Extraction, FetchLog, Post, User
 from app.notifications import send_telegram_message
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
-from app.site import render_calendar_view, render_homepage, render_login_page, render_privacy_page, render_terms_page
+from app.site import render_calendar_view, render_homepage, render_login_page, render_post_detail, render_privacy_page, render_terms_page
 from app.telegram_link import build_connect_url, generate_link_code, parse_start_command
 from app.timeutil import parse_gmt
 
@@ -73,7 +73,7 @@ class RedirectToLogin(Exception):
 
 @app.exception_handler(RedirectToLogin)
 def _redirect_to_login(request: Request, exc: RedirectToLogin) -> Response:
-    return RedirectResponse("/login", status_code=303)
+    return RedirectResponse("/login", status_code=307)
 
 
 OAUTH_STATE_COOKIE = "internblog_oauth_state"
@@ -189,6 +189,15 @@ def privacy_page() -> str:
 @app.get("/terms", response_class=HTMLResponse)
 def terms_page() -> str:
     return render_terms_page()
+
+
+@app.get("/posts/{post_id}", response_class=HTMLResponse)
+def post_detail(post_id: int, user: User = Depends(get_current_user_or_redirect)) -> str:
+    with SessionLocal() as db:
+        post = db.query(Post).filter_by(id=post_id).one_or_none()
+    if post is None:
+        raise HTTPException(status_code=404)
+    return render_post_detail(post)
 
 
 @app.get("/google162e56c4a13e2140.html", response_class=HTMLResponse)

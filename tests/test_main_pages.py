@@ -120,3 +120,43 @@ def test_cycle_route_200s_for_admin(client, _fresh_db, monkeypatch):
     _login_as(client, _fresh_db, "owner@example.com")
     response = client.post("/cycle")
     assert response.status_code == 200
+
+
+def test_post_detail_requires_login(client, _fresh_db):
+    from app.models import Post
+
+    db = _fresh_db()
+    db.add(Post(
+        wp_id=1, slug="a", title="Acme - SDE Intern", link="https://blog.example.com/a",
+        date_gmt="2026-07-17T10:00:00", modified_gmt="2026-07-17T10:00:00",
+        content_hash="h", raw_html="<p>Hi</p>",
+    ))
+    db.commit()
+
+    response = client.get("/posts/1", follow_redirects=False)
+    assert response.status_code == 307
+    assert response.headers["location"] == "/login"
+
+
+def test_post_detail_shows_full_content_when_logged_in(client, _fresh_db):
+    from app.models import Post
+
+    _login_as(client, _fresh_db, "reader@example.com")
+    db = _fresh_db()
+    db.add(Post(
+        wp_id=2, slug="b", title="Acme - SDE Intern", link="https://blog.example.com/b",
+        date_gmt="2026-07-17T10:00:00", modified_gmt="2026-07-17T10:00:00",
+        content_hash="h", raw_html="<p>We are hiring.</p>",
+    ))
+    db.commit()
+    post_id = db.query(Post).filter_by(wp_id=2).one().id
+
+    response = client.get(f"/posts/{post_id}")
+    assert response.status_code == 200
+    assert "We are hiring." in response.text
+
+
+def test_post_detail_404s_for_unknown_post(client, _fresh_db):
+    _login_as(client, _fresh_db, "reader2@example.com")
+    response = client.get("/posts/999999")
+    assert response.status_code == 404
