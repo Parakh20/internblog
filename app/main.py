@@ -181,7 +181,10 @@ def login_page() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def home(user: User = Depends(get_current_user_or_redirect)) -> str:
+    status = _compute_status()
     with SessionLocal() as db:
+        total_extractions = db.scalar(select(func.count(Extraction.id))) or 0
+
         calendar_rows = db.execute(
             select(Extraction, Post)
             .join(Post, Extraction.post_id == Post.id)
@@ -199,7 +202,31 @@ def home(user: User = Depends(get_current_user_or_redirect)) -> str:
             ),
             key=lambda r: r["deadline"],
         )
-    return render_calendar_view(user, upcoming, is_admin=auth.is_admin(user))
+
+        recent_rows = db.execute(
+            select(Extraction, Post).join(Post, Extraction.post_id == Post.id)
+        ).all()
+        recent = sorted(
+            (
+                {
+                    "category": extraction.category,
+                    "company": extraction.company,
+                    "role": extraction.role,
+                    "deadline": extraction.deadline,
+                    "link": post.link,
+                    "posted_at": post.date_gmt,
+                    "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
+                }
+                for extraction, post in recent_rows
+            ),
+            # Same ordering as the admin dashboard: newest post first, by
+            # when it actually appeared on the blog.
+            key=lambda r: parse_gmt(r["posted_at"]) or _EPOCH,
+            reverse=True,
+        )
+    return render_calendar_view(
+        user, upcoming, recent, total_extractions, status, is_admin=auth.is_admin(user)
+    )
 
 
 @app.post("/settings")

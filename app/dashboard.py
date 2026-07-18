@@ -44,6 +44,18 @@ def _fmt_posted(value: str | None) -> str:
     return dt.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
 
 
+def _safe_link(link: str) -> str:
+    """Renders a clickable anchor only for http(s) links. Untrusted schemes
+    like javascript: or data: are rendered as inert escaped text instead,
+    since html.escape() alone prevents attribute breakout but not a
+    dangerous scheme executing on click. link comes from scraped, untrusted
+    blog post data (Post.link), so this guard applies even though today's
+    scraper only ever produces http(s) links."""
+    if link.startswith("http://") or link.startswith("https://"):
+        return f'<a href="{escape(link)}">post</a>'
+    return escape(link)
+
+
 def _extraction_row(r: dict, show_posted: bool = False) -> str:
     extra = f"<td>{escape(_fmt_posted(r['posted_at']))}</td>" if show_posted else ""
     return (
@@ -52,7 +64,7 @@ def _extraction_row(r: dict, show_posted: bool = False) -> str:
         f"<td>{escape(r['company'] or '-')}</td>"
         f"<td>{escape(r['role'] or '-')}</td>"
         f"<td>{escape(_fmt_ist(r['deadline']))}</td>"
-        f'<td><a href="{escape(r["link"])}">post</a></td>'
+        f"<td>{_safe_link(r['link'])}</td>"
         f"{extra}"
         f"</tr>"
     )
