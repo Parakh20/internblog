@@ -81,3 +81,35 @@ class FetchLog(Base):
     modified_count: Mapped[int] = mapped_column(Integer, default=0)
     removed_count: Mapped[int] = mapped_column(Integer, default=0)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class User(Base):
+    """A visitor who signed in with Google. calendar_refresh_token_encrypted
+    and calendar_id are set on first login (see app/auth.py), when we also
+    create their dedicated "Internblog Deadlines" secondary calendar."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    google_sub: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    picture_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    calendar_refresh_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    calendar_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    calendar_sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Session(Base):
+    """Server-side session, looked up by the opaque token stored in the
+    session cookie. Revocable (unlike a JWT) - logging out deletes the row,
+    and any session can be killed independently of any other."""
+
+    __tablename__ = "sessions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
