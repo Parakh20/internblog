@@ -378,7 +378,7 @@ OAUTH_REDIRECT_BASE_URL=https://your-hostname.duckdns.org
 OWNER_EMAIL=sharmaparakh05@gmail.com
 ```
 
-and remove the now-superseded `GOOGLE_CALENDAR_CLIENT_ID`/`GOOGLE_CALENDAR_CLIENT_SECRET`/`GOOGLE_CALENDAR_REFRESH_TOKEN`/`GOOGLE_CALENDAR_ID` lines (kept in git history; Task 9's migration script is what actually retires the settings in code).
+and remove the now-superseded `GOOGLE_CALENDAR_CLIENT_ID`/`GOOGLE_CALENDAR_CLIENT_SECRET`/`GOOGLE_CALENDAR_REFRESH_TOKEN`/`GOOGLE_CALENDAR_ID` lines (kept in git history; Task 8's migration script is what actually retires the settings in code).
 
 - [ ] **Step 7: Commit**
 
