@@ -2,14 +2,16 @@
 
 import asyncio
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, HTTPException, Response
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select, text
 
+from app import auth
 from app.blog_client import BlogClient
 from app.calendar_feed import DeadlineEvent, build_ics
 from app.config import settings
@@ -17,7 +19,7 @@ from app.dashboard import render_dashboard
 from app.db import SessionLocal, init_db
 from app.extraction import CALENDAR_CATEGORIES
 from app.logging_setup import setup_logging
-from app.models import Extraction, FetchLog, Post
+from app.models import Extraction, FetchLog, Post, User
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
 from app.timeutil import parse_gmt
@@ -60,6 +62,58 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="internblog-monitor", lifespan=lifespan)
+
+OAUTH_STATE_COOKIE = "internblog_oauth_state"
+
+
+def get_current_user_or_redirect(request: Request) -> User:
+    session_id = request.cookies.get(settings.session_cookie_name)
+    with SessionLocal() as db:
+        user = auth.get_session_user(db, session_id)
+    if user is None:
+        raise HTTPException(status_code=307, headers={"Location": "/login"})
+    return user
+
+
+@app.get("/auth/start")
+def auth_start() -> Response:
+    """Begins the Google OAuth redirect. The /login page (added in Task 7)
+    links here rather than redirecting to Google directly, so a visitor
+    sees an explanatory card first."""
+    url, state = auth.build_authorization_url()
+    response = RedirectResponse(url, status_code=307)
+    response.set_cookie(OAUTH_STATE_COOKIE, state, httponly=True, secure=True, samesite="lax", max_age=600)
+    return response
+
+
+@app.get("/auth/callback")
+def auth_callback(request: Request, code: str, state: str) -> Response:
+    expected_state = request.cookies.get(OAUTH_STATE_COOKIE)
+    if not expected_state or not secrets.compare_digest(expected_state, state):
+        raise HTTPException(status_code=400, detail="invalid oauth state")
+
+    profile = auth.exchange_code_for_tokens(code)
+    with SessionLocal() as db:
+        user = auth.upsert_user_from_google(db, profile)
+        session_id = auth.create_session(db, user.id)
+
+    response = RedirectResponse("/", status_code=307)
+    response.delete_cookie(OAUTH_STATE_COOKIE)
+    response.set_cookie(
+        settings.session_cookie_name, session_id, httponly=True, secure=True, samesite="lax",
+        max_age=settings.session_ttl_days * 86400,
+    )
+    return response
+
+
+@app.get("/logout")
+def logout(request: Request) -> Response:
+    session_id = request.cookies.get(settings.session_cookie_name)
+    with SessionLocal() as db:
+        auth.delete_session(db, session_id)
+    response = RedirectResponse("/login", status_code=307)
+    response.delete_cookie(settings.session_cookie_name)
+    return response
 
 
 def _compute_status() -> dict:
