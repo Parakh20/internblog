@@ -1,5 +1,5 @@
-from app.models import User
-from app.site import render_calendar_view, render_login_page
+from app.models import Post, User
+from app.site import render_calendar_view, render_login_page, render_post_detail
 
 _EMPTY_STATUS = {"last_fetch": {"ts": None}, "poll_interval_minutes": 2}
 
@@ -118,3 +118,40 @@ def test_calendar_view_has_no_manual_chat_id_input():
     user = User(email="u@example.com", telegram_chat_id=None, calendar_sync_enabled=True)
     html = _render(user)
     assert 'name="telegram_chat_id"' not in html
+
+
+def _post(**overrides):
+    defaults = dict(
+        id=1, wp_id=1, slug="acme-sde-intern", title="Acme - SDE Intern",
+        link="https://blog.example.com/acme-sde-intern", date_gmt="2026-07-17T10:00:00",
+        modified_gmt="2026-07-17T10:00:00", content_hash="h", raw_html="<p>We are hiring.</p>",
+    )
+    defaults.update(overrides)
+    return Post(**defaults)
+
+
+def test_post_detail_shows_title_and_content():
+    html = render_post_detail(_post())
+    assert "Acme - SDE Intern" in html
+    assert "We are hiring." in html
+
+
+def test_post_detail_links_back_to_original_post():
+    html = render_post_detail(_post())
+    assert 'href="https://blog.example.com/acme-sde-intern"' in html
+
+
+def test_post_detail_strips_script_tags():
+    html = render_post_detail(_post(raw_html="<p>Hi</p><script>alert(1)</script>"))
+    assert "<script>" not in html
+    assert "alert(1)" not in html
+
+
+def test_post_detail_strips_event_handler_attributes():
+    html = render_post_detail(_post(raw_html='<p onclick="alert(1)">Hi</p>'))
+    assert "onclick" not in html
+
+
+def test_post_detail_preserves_allowed_formatting():
+    html = render_post_detail(_post(raw_html='<p>Apply <a href="https://apply.example.com">here</a></p>'))
+    assert '<a href="https://apply.example.com">here</a>' in html

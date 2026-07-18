@@ -2,10 +2,12 @@
 upcoming-events view. Same plain-HTML-f-string approach as
 app/dashboard.py - no template engine, no JS framework."""
 
+import re
+import bleach
 from html import escape
 
-from app.dashboard import _extraction_row, _fmt_ts, _safe_link
-from app.models import User
+from app.dashboard import _extraction_row, _fmt_posted, _fmt_ts, _safe_link
+from app.models import Post, User
 from app.timeutil import IST, parse_ist
 
 _STYLE = """
@@ -152,6 +154,36 @@ def render_terms_page() -> str:
 
     <h2>Contact</h2>
     <p>Questions: {escape("sharmaparakh05@gmail.com")}</p>
+  </div>
+</div>
+</body></html>"""
+
+
+_ALLOWED_POST_TAGS = ["p", "br", "b", "strong", "i", "em", "a", "ul", "ol", "li", "span", "div"]
+_ALLOWED_POST_ATTRS = {"a": ["href"]}
+
+
+def _sanitize_post_html(raw_html: str) -> str:
+    """Strips scripts, event handler attributes, and any tag/attribute
+    outside a conservative allowlist from scraped blog post content before
+    it's rendered on our own page - raw_html is fetched content we don't
+    fully control, not something we authored."""
+    # Remove script tags and their content
+    cleaned = re.sub(r'<script[^>]*>.*?</script>', '', raw_html, flags=re.DOTALL | re.IGNORECASE)
+    # Then sanitize remaining HTML
+    return bleach.clean(cleaned, tags=_ALLOWED_POST_TAGS, attributes=_ALLOWED_POST_ATTRS, strip=True)
+
+
+def render_post_detail(post: Post) -> str:
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>{escape(post.title)} - internblog</title><style>{_STYLE}</style></head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <p><a href="/">&larr; Back to database</a></p>
+    <h1>{escape(post.title)}</h1>
+    <p style="color:#666;font-size:0.85rem">Posted {escape(_fmt_posted(post.date_gmt))} &middot; {_safe_link(post.link)}</p>
+    <div>{_sanitize_post_html(post.raw_html)}</div>
   </div>
 </div>
 </body></html>"""
