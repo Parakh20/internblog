@@ -74,6 +74,18 @@ def test_admin_route_200s_for_owner(client, _fresh_db):
     assert response.status_code == 200
 
 
+def test_admin_dashboard_lists_registered_users(client, _fresh_db):
+    _login_as(client, _fresh_db, "owner@example.com")
+    db = _fresh_db()
+    db.add(User(google_sub="listed", email="listed-user@example.com", name="Listed User"))
+    db.commit()
+
+    response = client.get("/admin")
+    assert response.status_code == 200
+    assert "listed-user@example.com" in response.text
+    assert "Listed User" in response.text
+
+
 def test_settings_updates_sync_toggle(client, _fresh_db):
     _login_as(client, _fresh_db, "user2@example.com")
     response = client.post("/settings", data={}, follow_redirects=False)

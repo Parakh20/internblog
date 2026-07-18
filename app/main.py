@@ -342,6 +342,19 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
     with SessionLocal() as db:
         total_extractions = db.scalar(select(func.count(Extraction.id))) or 0
 
+        users = [
+            {
+                "email": u.email,
+                "name": u.name,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "calendar_sync_enabled": u.calendar_sync_enabled,
+                "has_calendar": u.calendar_id is not None,
+                "has_event_calendar": u.event_calendar_id is not None,
+                "telegram_connected": u.telegram_chat_id is not None,
+            }
+            for u in db.query(User).all()
+        ]
+
         calendar_rows = db.execute(
             select(Extraction, Post)
             .join(Post, Extraction.post_id == Post.id)
@@ -386,7 +399,7 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
             key=lambda r: parse_gmt(r["posted_at"]) or _EPOCH,
             reverse=True,
         )
-    return render_dashboard(status, upcoming, recent, total_extractions)
+    return render_dashboard(status, upcoming, recent, total_extractions, users)
 
 
 @app.post("/cycle")

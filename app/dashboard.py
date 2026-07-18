@@ -70,7 +70,23 @@ def _extraction_row(r: dict, show_posted: bool = False) -> str:
     )
 
 
-def render_dashboard(status: dict, upcoming: list[dict], recent: list[dict], total_extractions: int) -> str:
+def _user_row(u: dict) -> str:
+    return (
+        f"<tr>"
+        f"<td>{escape(u['email'])}</td>"
+        f"<td>{escape(u['name'] or '-')}</td>"
+        f"<td>{escape(_fmt_ts(u['created_at']))}</td>"
+        f"<td>{'Yes' if u['calendar_sync_enabled'] else 'No'}</td>"
+        f"<td>{'Yes' if u['has_calendar'] else 'No'}</td>"
+        f"<td>{'Yes' if u['has_event_calendar'] else 'No'}</td>"
+        f"<td>{'Yes' if u['telegram_connected'] else 'No'}</td>"
+        f"</tr>"
+    )
+
+
+def render_dashboard(
+    status: dict, upcoming: list[dict], recent: list[dict], total_extractions: int, users: list[dict]
+) -> str:
     session = status.get("session") or {}
     last_fetch = status.get("last_fetch") or {}
     counts = status.get("counts") or {}
@@ -80,6 +96,9 @@ def render_dashboard(status: dict, upcoming: list[dict], recent: list[dict], tot
     )
     recent_rows = "\n".join(_extraction_row(r, show_posted=True) for r in recent) or (
         '<tr><td colspan="6" style="text-align:center;color:#666">No extractions yet</td></tr>'
+    )
+    user_rows = "\n".join(_user_row(u) for u in users) or (
+        '<tr><td colspan="7" style="text-align:center;color:#666">No registered users</td></tr>'
     )
 
     return f"""<!doctype html>
@@ -137,6 +156,16 @@ def render_dashboard(status: dict, upcoming: list[dict], recent: list[dict], tot
 <thead><tr><th>Category</th><th>Company</th><th>Role</th><th>Deadline</th><th>Link</th><th>Posted</th></tr></thead>
 <tbody>
 {recent_rows}
+</tbody>
+</table>
+</div>
+
+<h2>Registered users <span class="count">({len(users)})</span></h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Email</th><th>Name</th><th>Joined</th><th>Sync</th><th>Deadlines cal</th><th>Events cal</th><th>Telegram</th></tr></thead>
+<tbody>
+{user_rows}
 </tbody>
 </table>
 </div>
