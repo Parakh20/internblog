@@ -12,9 +12,6 @@ def _fresh_db(tmp_path, monkeypatch):
 
     monkeypatch.setattr(settings, "database_url", f"sqlite:///{tmp_path}/test.db")
     monkeypatch.setattr(settings, "secret_encryption_key", Fernet.generate_key().decode())
-    # Tests use throwaway emails like x@example.com - reset the real
-    # ALLOWED_EMAILS from .env so it doesn't leak into these and reject them.
-    monkeypatch.setattr(settings, "allowed_emails", "")
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
 
@@ -60,44 +57,6 @@ def test_callback_creates_session_and_redirects_home(client, monkeypatch):
     )
     assert response.status_code == 307
     assert response.headers["location"] == "/"
-    assert main.settings.session_cookie_name in response.cookies
-
-
-def test_callback_rejects_email_not_on_allowlist(client, monkeypatch):
-    monkeypatch.setattr(main.settings, "allowed_emails", "allowed@example.com")
-    monkeypatch.setattr(auth, "exchange_code_for_tokens", lambda code: {
-        "google_sub": "sub-z", "email": "not-allowed@example.com", "name": "Z",
-        "picture": None, "refresh_token": "rt", "access_token": "at",
-    })
-
-    response = client.get(
-        "/auth/callback?code=abc&state=expected",
-        cookies={"internblog_oauth_state": "expected"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 403
-    assert main.settings.session_cookie_name not in response.cookies
-
-    from app.models import User
-
-    db = main.SessionLocal()
-    assert db.query(User).filter_by(email="not-allowed@example.com").one_or_none() is None
-
-
-def test_callback_allows_email_on_allowlist(client, monkeypatch):
-    monkeypatch.setattr(main.settings, "allowed_emails", "allowed@example.com")
-    monkeypatch.setattr(auth, "exchange_code_for_tokens", lambda code: {
-        "google_sub": "sub-a", "email": "allowed@example.com", "name": "A",
-        "picture": None, "refresh_token": "rt", "access_token": "at",
-    })
-    monkeypatch.setattr(auth, "create_secondary_calendar", lambda access_token: "cal-a")
-
-    response = client.get(
-        "/auth/callback?code=abc&state=expected",
-        cookies={"internblog_oauth_state": "expected"},
-        follow_redirects=False,
-    )
-    assert response.status_code == 307
     assert main.settings.session_cookie_name in response.cookies
 
 

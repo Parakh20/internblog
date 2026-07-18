@@ -23,15 +23,7 @@ from app.models import Extraction, FetchLog, Post, User
 from app.notifications import send_telegram_message
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
-from app.site import (
-    render_access_denied_page,
-    render_calendar_view,
-    render_homepage,
-    render_login_page,
-    render_post_detail,
-    render_privacy_page,
-    render_terms_page,
-)
+from app.site import render_calendar_view, render_homepage, render_login_page, render_post_detail, render_privacy_page, render_terms_page
 from app.telegram_link import build_connect_url, generate_link_code, parse_start_command
 from app.timeutil import parse_gmt
 
@@ -114,11 +106,6 @@ def auth_callback(request: Request, code: str, state: str) -> Response:
         raise HTTPException(status_code=400, detail="invalid oauth state")
 
     profile = auth.exchange_code_for_tokens(code)
-    if not auth.is_email_allowed(profile["email"]):
-        response = HTMLResponse(render_access_denied_page(), status_code=403)
-        response.delete_cookie(OAUTH_STATE_COOKIE)
-        return response
-
     with SessionLocal() as db:
         user = auth.upsert_user_from_google(db, profile)
         session_id = auth.create_session(db, user.id)

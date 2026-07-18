@@ -86,17 +86,6 @@ class Settings(BaseSettings):
     # Only this email sees /admin (the session/fetch-log/DB dashboard).
     owner_email: str = "sharmaparakh05@gmail.com"
 
-    # Comma-separated allowlist of emails permitted to sign in at all -
-    # placement-office policy requires this stay restricted to a small
-    # explicit group rather than being publicly signupable. Empty means no
-    # restriction (every Google account can sign in), matching pre-allowlist
-    # behavior - see app/auth.py::is_email_allowed.
-    allowed_emails: str = ""
-
-    @property
-    def allowed_email_set(self) -> set[str]:
-        return {e.strip().lower() for e in self.allowed_emails.split(",") if e.strip()}
-
     session_cookie_name: str = "internblog_session"
     session_ttl_days: int = 30
 
