@@ -36,10 +36,12 @@ def _login_as(client, session_factory, email):
     return user
 
 
-def test_root_requires_login(client):
+def test_root_shows_public_homepage_when_not_logged_in(client):
     response = client.get("/", follow_redirects=False)
-    assert response.status_code == 303
-    assert response.headers["location"] == "/login"
+    assert response.status_code == 200
+    assert "internship" in response.text.lower()
+    assert "calendar" in response.text.lower()
+    assert "/auth/start" in response.text
 
 
 def test_privacy_and_terms_pages_are_public(client):

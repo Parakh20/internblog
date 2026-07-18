@@ -23,7 +23,7 @@ from app.models import Extraction, FetchLog, Post, User
 from app.notifications import send_telegram_message
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
-from app.site import render_calendar_view, render_login_page, render_privacy_page, render_terms_page
+from app.site import render_calendar_view, render_homepage, render_login_page, render_privacy_page, render_terms_page
 from app.telegram_link import build_connect_url, generate_link_code, parse_start_command
 from app.timeutil import parse_gmt
 
@@ -201,10 +201,19 @@ def google_site_verification() -> str:
 
 
 @app.get("/", response_class=HTMLResponse)
-def home(user: User = Depends(get_current_user_or_redirect)) -> str:
+def home(request: Request) -> str:
+    """Anonymous visitors see a public homepage explaining the app's
+    purpose (this is the exact "Homepage URL" Google's OAuth branding
+    review checks) - only signed-in visitors see the calendar view."""
+    session_id = request.cookies.get(settings.session_cookie_name)
+    with SessionLocal() as db:
+        session_user = auth.get_session_user(db, session_id)
+    if session_user is None:
+        return render_homepage()
+
     status = _compute_status()
     with SessionLocal() as db:
-        db_user = db.query(User).filter_by(id=user.id).one()
+        db_user = db.query(User).filter_by(id=session_user.id).one()
         if not db_user.telegram_chat_id and not db_user.telegram_link_code:
             db_user.telegram_link_code = generate_link_code()
             db.commit()

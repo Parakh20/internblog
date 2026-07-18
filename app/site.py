@@ -34,6 +34,36 @@ _STYLE = """
 """
 
 
+def render_homepage() -> str:
+    """Public landing page shown at / for anonymous visitors - explains
+    what the app does before asking anyone to sign in. Google's OAuth
+    branding review checks the exact "Homepage URL" configured on the
+    consent screen (https://internblog.duckdns.org, i.e. this route) for a
+    real explanation of the app's purpose, not just a sign-in prompt."""
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>internblog</title><style>{_STYLE}</style></head>
+<body>
+<div class="wrap" style="max-width:640px">
+  <div class="card" style="text-align:center;margin-top:3rem">
+    <h1>internblog</h1>
+    <p>internblog tracks internship postings from the IIT Bombay placement
+    blog and keeps their application deadlines, test dates, and PPTs in
+    sync with your own Google Calendar - so you never have to check the
+    blog manually or miss a date.</p>
+    <p>Sign in with Google to get started. We create one dedicated
+    "Internblog Deadlines" calendar in your account and only ever write
+    events there - we never see or touch any of your other calendars. You
+    can also optionally connect Telegram for the same alerts.</p>
+    <a class="btn" href="/auth/start">Sign in with Google</a>
+    <p style="margin-top:2rem;font-size:0.8rem;color:#999">
+      <a href="/privacy" style="color:#999">Privacy Policy</a> &middot;
+      <a href="/terms" style="color:#999">Terms of Service</a>
+    </p>
+  </div>
+</div>
+</body></html>"""
+
+
 def render_login_page() -> str:
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>internblog</title><style>{_STYLE}</style></head>
