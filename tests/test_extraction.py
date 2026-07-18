@@ -110,3 +110,20 @@ def test_genuine_range_is_not_touched():
     )
     assert parsed.deadline == "2026-07-10T18:00:00"
     assert parsed.event_end == "2026-07-10T19:00:00"
+
+
+def test_deadline_and_event_categories_partition_calendar_categories():
+    assert DEADLINE_CALENDAR_CATEGORIES | EVENT_CALENDAR_CATEGORIES == CALENDAR_CATEGORIES
+    assert DEADLINE_CALENDAR_CATEGORIES & EVENT_CALENDAR_CATEGORIES == frozenset()
+
+
+def test_deadline_categories_are_new_listing_and_extension():
+    assert DEADLINE_CALENDAR_CATEGORIES == frozenset(
+        {PostCategory.NEW_LISTING, PostCategory.DEADLINE_EXTENSION}
+    )
+
+
+def test_event_categories_are_tests_and_ppt():
+    assert EVENT_CALENDAR_CATEGORIES == frozenset(
+        {PostCategory.TEST_UPDATE, PostCategory.TEST_RESCHEDULE, PostCategory.PPT}
+    )

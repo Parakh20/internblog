@@ -76,17 +76,29 @@ NOTIFY_CATEGORIES = frozenset(
     }
 )
 
-# Categories worth a calendar entry when they carry a date. Excludes results
-# (nothing to attend/act on by a date) and ADMINISTRATIVE/OTHER.
-CALENDAR_CATEGORIES = frozenset(
+# Application-deadline categories: push to the user's "Internblog Deadlines"
+# calendar as a single point-in-time event.
+DEADLINE_CALENDAR_CATEGORIES: frozenset[PostCategory] = frozenset(
     {
         PostCategory.NEW_LISTING,
-        PostCategory.TEST_UPDATE,
-        PostCategory.TEST_RESCHEDULE,
-        PostCategory.PPT,
         PostCategory.DEADLINE_EXTENSION,
     }
 )
+
+# Time-ranged event categories (tests/OA, PPTs): push to a separate
+# "Internblog Events" calendar, using the post's start/end time range.
+EVENT_CALENDAR_CATEGORIES: frozenset[PostCategory] = frozenset(
+    {
+        PostCategory.TEST_UPDATE,
+        PostCategory.TEST_RESCHEDULE,
+        PostCategory.PPT,
+    }
+)
+
+# Union of both buckets - the existing meaning of "worth a calendar entry
+# when it carries a date", used by the ICS feed and the "upcoming" queries,
+# which don't care which calendar a given event lives in.
+CALENDAR_CATEGORIES: frozenset[PostCategory] = DEADLINE_CALENDAR_CATEGORIES | EVENT_CALENDAR_CATEGORIES
 
 # Groups categories that describe updates to the SAME underlying event for a
 # company, so e.g. a deadline_extension modifies the original new_listing's
