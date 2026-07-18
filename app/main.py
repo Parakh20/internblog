@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select, text
 
@@ -22,6 +22,7 @@ from app.logging_setup import setup_logging
 from app.models import Extraction, FetchLog, Post, User
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
+from app.site import render_calendar_view, render_login_page
 from app.timeutil import parse_gmt
 
 # Sort key for "no date" extractions in the dashboard's newest-event-first
@@ -63,6 +64,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="internblog-monitor", lifespan=lifespan)
 
+
+class RedirectToLogin(Exception):
+    pass
+
+
+@app.exception_handler(RedirectToLogin)
+def _redirect_to_login(request: Request, exc: RedirectToLogin) -> Response:
+    return RedirectResponse("/login", status_code=307)
+
+
 OAUTH_STATE_COOKIE = "internblog_oauth_state"
 
 
@@ -71,7 +82,7 @@ def get_current_user_or_redirect(request: Request) -> User:
     with SessionLocal() as db:
         user = auth.get_session_user(db, session_id)
     if user is None:
-        raise HTTPException(status_code=307, headers={"Location": "/login"})
+        raise RedirectToLogin()
     return user
 
 
@@ -163,8 +174,53 @@ def health() -> dict:
     return _compute_status()
 
 
+@app.get("/login", response_class=HTMLResponse)
+def login_page() -> str:
+    return render_login_page()
+
+
 @app.get("/", response_class=HTMLResponse)
-def dashboard() -> str:
+def home(user: User = Depends(get_current_user_or_redirect)) -> str:
+    with SessionLocal() as db:
+        calendar_rows = db.execute(
+            select(Extraction, Post)
+            .join(Post, Extraction.post_id == Post.id)
+            .where(Extraction.category.in_([c.value for c in CALENDAR_CATEGORIES]))
+            .where(Extraction.deadline.is_not(None))
+        ).all()
+        upcoming = sorted(
+            (
+                {
+                    "category": extraction.category, "company": extraction.company,
+                    "role": extraction.role, "deadline": extraction.deadline, "link": post.link,
+                }
+                for extraction, post in calendar_rows
+                if _is_upcoming(extraction.deadline)
+            ),
+            key=lambda r: r["deadline"],
+        )
+    return render_calendar_view(user, upcoming, is_admin=auth.is_admin(user))
+
+
+@app.post("/settings")
+def save_settings(
+    request: Request,
+    user: User = Depends(get_current_user_or_redirect),
+    telegram_chat_id: str = Form(""),
+    calendar_sync_enabled: bool = Form(False),
+) -> Response:
+    with SessionLocal() as db:
+        db_user = db.query(User).filter_by(id=user.id).one()
+        db_user.telegram_chat_id = telegram_chat_id.strip() or None
+        db_user.calendar_sync_enabled = calendar_sync_enabled
+        db.commit()
+    return RedirectResponse("/", status_code=307)
+
+
+@app.get("/admin", response_class=HTMLResponse)
+def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
+    if not auth.is_admin(user):
+        raise HTTPException(status_code=404)
     status = _compute_status()
     with SessionLocal() as db:
         total_extractions = db.scalar(select(func.count(Extraction.id))) or 0
