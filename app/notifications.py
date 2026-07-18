@@ -31,6 +31,8 @@ def format_notification_message(
     role: str | None,
     deadline: str | None,
     stipend: str | None,
+    location: str | None = None,
+    application_link: str | None = None,
 ) -> str:
     label = _CATEGORY_LABELS.get(category, "Update")
     lines = [f"{label}: {company or 'Unknown company'}"]
@@ -40,6 +42,10 @@ def format_notification_message(
         lines.append(f"Date: {deadline}")
     if stipend:
         lines.append(f"Stipend: {stipend}")
+    if location:
+        lines.append(f"Location: {location}")
+    if application_link:
+        lines.append(f"Link: {application_link}")
     return "\n".join(lines)
 
 

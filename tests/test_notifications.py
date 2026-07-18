@@ -58,3 +58,30 @@ def test_administrative_notices_are_not_sent():
 
     assert PostCategory.ADMINISTRATIVE not in NOTIFY_CATEGORIES
     assert PostCategory.OTHER not in NOTIFY_CATEGORIES
+
+
+def test_includes_location_when_present():
+    msg = format_notification_message(
+        category=PostCategory.NEW_LISTING,
+        company="Acme", role="SWE Intern", deadline=None, stipend=None,
+        location="Bangalore",
+    )
+    assert "Location: Bangalore" in msg
+
+
+def test_includes_application_link_when_present():
+    msg = format_notification_message(
+        category=PostCategory.NEW_LISTING,
+        company="Acme", role="SWE Intern", deadline=None, stipend=None,
+        application_link="https://forms.gle/abc123",
+    )
+    assert "Link: https://forms.gle/abc123" in msg
+
+
+def test_omits_location_and_link_when_absent():
+    msg = format_notification_message(
+        category=PostCategory.NEW_LISTING,
+        company="Acme", role=None, deadline=None, stipend=None,
+    )
+    assert "Location:" not in msg
+    assert "Link:" not in msg

@@ -230,6 +230,7 @@ def push_to_all_users(db: Session, extraction: Extraction, row: Post) -> None:
                 message = format_notification_message(
                     category=PostCategory(extraction.category), company=extraction.company,
                     role=extraction.role, deadline=extraction.deadline, stipend=extraction.stipend,
+                    location=extraction.location, application_link=extraction.application_link,
                 )
             try:
                 send_or_edit_telegram_for_user(db, user, extraction, message)
