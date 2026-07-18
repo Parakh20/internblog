@@ -42,6 +42,11 @@ def test_root_requires_login(client):
     assert response.headers["location"] == "/login"
 
 
+def test_privacy_and_terms_pages_are_public(client):
+    assert client.get("/privacy").status_code == 200
+    assert client.get("/terms").status_code == 200
+
+
 def test_root_shows_calendar_view_when_logged_in(client, _fresh_db):
     _login_as(client, _fresh_db, "user@example.com")
     response = client.get("/")

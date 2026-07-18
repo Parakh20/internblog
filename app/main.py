@@ -23,7 +23,7 @@ from app.models import Extraction, FetchLog, Post, User
 from app.notifications import send_telegram_message
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
-from app.site import render_calendar_view, render_login_page
+from app.site import render_calendar_view, render_login_page, render_privacy_page, render_terms_page
 from app.telegram_link import build_connect_url, generate_link_code, parse_start_command
 from app.timeutil import parse_gmt
 
@@ -179,6 +179,16 @@ def health() -> dict:
 @app.get("/login", response_class=HTMLResponse)
 def login_page() -> str:
     return render_login_page()
+
+
+@app.get("/privacy", response_class=HTMLResponse)
+def privacy_page() -> str:
+    return render_privacy_page()
+
+
+@app.get("/terms", response_class=HTMLResponse)
+def terms_page() -> str:
+    return render_terms_page()
 
 
 @app.get("/", response_class=HTMLResponse)

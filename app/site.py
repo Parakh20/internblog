@@ -43,7 +43,87 @@ def render_login_page() -> str:
   <p>Sign in to sync internship deadlines to your Google Calendar, and
   optionally get Telegram alerts.</p>
   <a class="btn" href="/auth/start">Sign in with Google</a>
+  <p style="margin-top:2rem;font-size:0.8rem;color:#999">
+    <a href="/privacy" style="color:#999">Privacy Policy</a> &middot;
+    <a href="/terms" style="color:#999">Terms of Service</a>
+  </p>
 </div></div>
+</body></html>"""
+
+
+def render_privacy_page() -> str:
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Privacy Policy - internblog</title><style>{_STYLE}</style></head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Privacy Policy</h1>
+    <p>internblog helps you track internship postings from the IIT Bombay
+    placement blog by syncing deadlines to your own Google Calendar and,
+    optionally, sending you Telegram notifications.</p>
+
+    <h2>What we collect</h2>
+    <ul>
+      <li><strong>From Google Sign-In:</strong> your email address, name,
+      and profile picture, used only to identify your account and show it
+      back to you in the app.</li>
+      <li><strong>Calendar access:</strong> with your permission, we create
+      a single dedicated calendar named "Internblog Deadlines" in your
+      Google account and write internship deadline events into it. We do
+      not read, modify, or delete any other calendar you own. Your Google
+      Calendar refresh token is encrypted before being stored.</li>
+      <li><strong>Telegram (optional):</strong> if you connect Telegram, we
+      store the chat id Telegram assigns to your conversation with our bot,
+      so we can send you the same deadline notifications there.</li>
+    </ul>
+
+    <h2>What we don't do</h2>
+    <p>We don't sell or share your data with third parties. We don't read
+    your email, your other calendars, or your Telegram messages. The
+    internship postings themselves are public information already posted
+    on the IIT Bombay placement blog.</p>
+
+    <h2>Data retention</h2>
+    <p>Your account data is kept as long as you use the app. You can
+    disconnect Telegram at any time from Settings, and can revoke Google
+    Calendar access at any time from your
+    <a href="https://myaccount.google.com/permissions">Google Account
+    permissions page</a>.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about this policy: {escape("sharmaparakh05@gmail.com")}</p>
+  </div>
+</div>
+</body></html>"""
+
+
+def render_terms_page() -> str:
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Terms of Service - internblog</title><style>{_STYLE}</style></head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Terms of Service</h1>
+    <p>internblog is a free, unofficial tool that mirrors publicly posted
+    internship listings from the IIT Bombay placement blog and helps you
+    track their deadlines via your own Google Calendar and, optionally,
+    Telegram. It is not affiliated with or endorsed by IIT Bombay or the
+    placement office.</p>
+
+    <h2>No warranty</h2>
+    <p>internblog is provided as-is, with no guarantee of accuracy,
+    availability, or timeliness. Always verify deadlines and details
+    against the original placement blog post before relying on them.</p>
+
+    <h2>Your account</h2>
+    <p>You may disconnect Google Calendar or Telegram, or stop using the
+    app, at any time. We may remove your access if the service is
+    discontinued or misused.</p>
+
+    <h2>Contact</h2>
+    <p>Questions: {escape("sharmaparakh05@gmail.com")}</p>
+  </div>
+</div>
 </body></html>"""
 
 

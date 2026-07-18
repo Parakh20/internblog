@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 AUTHORIZATION_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
-SCOPE = "openid email profile https://www.googleapis.com/auth/calendar"
+SCOPE = "openid email profile https://www.googleapis.com/auth/calendar.app.created"
 
 
 def _redirect_uri() -> str:
