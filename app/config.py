@@ -42,9 +42,10 @@ class Settings(BaseSettings):
     def llm_model_list(self) -> list[str]:
         return [m.strip() for m in self.llm_models.split(",") if m.strip()]
 
-    # Telegram push notification for each new job posting extracted.
+    # Telegram push notification for each new job posting extracted. The
+    # chat id is per-user now (see User.telegram_chat_id in app/models.py);
+    # only the bot token is still a single global setting.
     telegram_bot_token: str = ""
-    telegram_chat_id: str = ""
 
     # ICS calendar feed of application deadlines, served at
     # /calendar/{calendar_feed_token}.ics. The token keeps the feed
@@ -56,23 +57,13 @@ class Settings(BaseSettings):
     # user's Google Calendar refresh token at rest.
     secret_encryption_key: str = ""
 
-    # Direct push into a personal Google Calendar via the Calendar API, so
-    # deadline/test/PPT events show up on mobile too - the official Google
-    # Calendar mobile app does not surface URL-subscribed ("Other calendars")
-    # feeds like the desktop web app does, so /calendar/{token}.ics alone
-    # doesn't reach phones. See docs/decisions.md.
-    google_calendar_client_id: str = ""
-    google_calendar_client_secret: str = ""
-    google_calendar_refresh_token: str = ""
-    google_calendar_id: str = "primary"
-
-    @property
-    def google_calendar_enabled(self) -> bool:
-        return bool(
-            self.google_calendar_client_id
-            and self.google_calendar_client_secret
-            and self.google_calendar_refresh_token
-        )
+    # Direct push into each user's personal Google Calendar via the Calendar
+    # API, so deadline/test/PPT events show up on mobile too - the official
+    # Google Calendar mobile app does not surface URL-subscribed ("Other
+    # calendars") feeds like the desktop web app does, so
+    # /calendar/{token}.ics alone doesn't reach phones. See docs/decisions.md.
+    # Per-user refresh token/calendar id now live on the User model
+    # (app/models.py), populated via app/auth.py on first sign-in.
 
     # OAuth client used for both "Sign in with Google" and Calendar API
     # access - same Cloud project as the original single-user setup, now

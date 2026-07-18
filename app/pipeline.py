@@ -160,35 +160,6 @@ def run_extraction(db: Session, row: Post) -> None:
         push_to_all_users(db, extraction, row)
 
 
-def send_or_edit_telegram(db: Session, extraction: Extraction, message: str) -> None:
-    """Edit the existing Telegram message for this (company, event type)
-    group if one was sent before, so e.g. a deadline_extension updates the
-    original new_listing notification instead of sending a duplicate. Falls
-    back to sending a new message when there's no group (company-less
-    posts) or no prior message, or if the edit itself fails."""
-    group = NOTIFY_EVENT_GROUP.get(PostCategory(extraction.category))
-    group_key = f"{extraction.company.strip().lower()}|{group}" if extraction.company and group else None
-
-    existing = (
-        db.query(TelegramNotification).filter_by(group_key=group_key).one_or_none()
-        if group_key
-        else None
-    )
-    if existing is not None and edit_telegram_message(
-        settings.telegram_bot_token, settings.telegram_chat_id, existing.message_id, message
-    ):
-        return
-
-    message_id = send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, message)
-    if message_id is None or group_key is None:
-        return
-    if existing is not None:
-        existing.message_id = message_id
-    else:
-        db.add(TelegramNotification(group_key=group_key, message_id=message_id))
-    db.commit()
-
-
 def send_or_edit_telegram_for_user(db: Session, user: User, extraction: Extraction, message: str) -> None:
     """Same edit-in-place behavior as before, but the group key is scoped
     per user so one user's deadline-extension edit never touches another

@@ -5,8 +5,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import pipeline
-from app.models import Base, Extraction, TelegramNotification
-from app.pipeline import _is_upcoming, send_or_edit_telegram
+from app.models import Base, Extraction, TelegramNotification, User
+from app.pipeline import _is_upcoming
 
 
 @pytest.fixture
@@ -24,17 +24,24 @@ def test_first_message_for_a_company_group_is_sent_not_edited(db, monkeypatch):
     monkeypatch.setattr(pipeline, "send_telegram_message", lambda *a: (sent.append(a) or 123))
     monkeypatch.setattr(pipeline, "edit_telegram_message", lambda *a: (_ for _ in ()).throw(AssertionError("should not edit")))
 
+    user = User(google_sub="tp1", email="tp1@example.com", telegram_chat_id="1")
+    db.add(user)
+    db.commit()
+
     extraction = Extraction(company="Acme", category="new_listing")
-    send_or_edit_telegram(db, extraction, "hello")
+    pipeline.send_or_edit_telegram_for_user(db, user, extraction, "hello")
 
     assert len(sent) == 1
     stored = db.query(TelegramNotification).one()
-    assert stored.group_key == "acme|deadline"
+    assert stored.group_key == f"{user.id}|acme|deadline"
     assert stored.message_id == 123
 
 
 def test_followup_in_same_group_edits_existing_message(db, monkeypatch):
-    db.add(TelegramNotification(group_key="acme|deadline", message_id=999))
+    user = User(google_sub="tp2", email="tp2@example.com", telegram_chat_id="1")
+    db.add(user)
+    db.commit()
+    db.add(TelegramNotification(group_key=f"{user.id}|acme|deadline", message_id=999))
     db.commit()
 
     edited = []
@@ -42,20 +49,23 @@ def test_followup_in_same_group_edits_existing_message(db, monkeypatch):
     monkeypatch.setattr(pipeline, "send_telegram_message", lambda *a: (_ for _ in ()).throw(AssertionError("should not send new")))
 
     extraction = Extraction(company="Acme", category="deadline_extension")
-    send_or_edit_telegram(db, extraction, "updated")
+    pipeline.send_or_edit_telegram_for_user(db, user, extraction, "updated")
 
     assert edited == [999]
 
 
 def test_edit_failure_falls_back_to_new_message(db, monkeypatch):
-    db.add(TelegramNotification(group_key="acme|deadline", message_id=999))
+    user = User(google_sub="tp3", email="tp3@example.com", telegram_chat_id="1")
+    db.add(user)
+    db.commit()
+    db.add(TelegramNotification(group_key=f"{user.id}|acme|deadline", message_id=999))
     db.commit()
 
     monkeypatch.setattr(pipeline, "edit_telegram_message", lambda *a: False)
     monkeypatch.setattr(pipeline, "send_telegram_message", lambda *a: 456)
 
     extraction = Extraction(company="Acme", category="deadline_extension")
-    send_or_edit_telegram(db, extraction, "updated")
+    pipeline.send_or_edit_telegram_for_user(db, user, extraction, "updated")
 
     stored = db.query(TelegramNotification).one()
     assert stored.message_id == 456
@@ -66,8 +76,12 @@ def test_company_less_post_always_sends_new_without_grouping(db, monkeypatch):
     monkeypatch.setattr(pipeline, "send_telegram_message", lambda *a: (sent.append(a) or 1))
     monkeypatch.setattr(pipeline, "edit_telegram_message", lambda *a: (_ for _ in ()).throw(AssertionError("should not edit")))
 
+    user = User(google_sub="tp4", email="tp4@example.com", telegram_chat_id="1")
+    db.add(user)
+    db.commit()
+
     extraction = Extraction(company=None, category="test_update")
-    send_or_edit_telegram(db, extraction, "mock test reminder")
+    pipeline.send_or_edit_telegram_for_user(db, user, extraction, "mock test reminder")
 
     assert len(sent) == 1
     assert db.query(TelegramNotification).count() == 0
@@ -85,9 +99,6 @@ def test_past_deadline_is_not_upcoming():
 
 def test_unparseable_deadline_is_not_upcoming():
     assert not _is_upcoming("not a date")
-
-
-from app.models import User
 
 
 def test_calendar_push_only_reaches_sync_enabled_users_with_a_refresh_token(db, monkeypatch):

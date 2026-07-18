@@ -95,7 +95,7 @@ a future `rsync` doesn't silently wipe server-only values:
 ```bash
 cp .env.example .env
 # fill in: POSTGRES_PASSWORD, GROQ_API_KEY, TELEGRAM_BOT_TOKEN,
-# TELEGRAM_CHAT_ID, CALENDAR_FEED_TOKEN (any long random string)
+# CALENDAR_FEED_TOKEN (any long random string)
 echo "CADDY_DOMAIN=your-hostname.duckdns.org" >> .env
 ```
 
@@ -110,9 +110,10 @@ curl https://your-hostname.duckdns.org/health
 ## 7. Wire up notifications
 
 **Telegram**: message [@BotFather](https://t.me/BotFather) to create a bot
-and get `TELEGRAM_BOT_TOKEN`. Send your new bot any message, then visit
-`https://api.telegram.org/bot<token>/getUpdates` to read your `chat_id` from
-the JSON response — that's `TELEGRAM_CHAT_ID`.
+and get `TELEGRAM_BOT_TOKEN` (set once, globally, in `.env`). Each signed-in
+user then sets their own chat id from `/settings`: send the bot any message,
+visit `https://api.telegram.org/bot<token>/getUpdates` to read their `chat_id`
+from the JSON response, and paste it into the form.
 
 **Google Calendar**: Google Calendar → Settings → Add calendar → From URL →
 `https://your-hostname.duckdns.org/calendar/<CALENDAR_FEED_TOKEN>.ics`.
@@ -120,6 +121,28 @@ Google polls subscribed external ICS feeds on its own schedule (commonly
 every several hours, not instantly) — same limitation Codeforces' contest
 calendar has. Telegram remains the immediate-notification channel; the
 calendar feed is for deadline tracking over time, not real-time alerts.
+
+## 8. Public login setup (multi-user)
+
+1. In the Google Cloud project already used for Calendar API access, add
+   an OAuth 2.0 **Web application** client (not "Desktop app" like the
+   original single-user setup) with an authorized redirect URI of
+   `https://your-hostname.duckdns.org/auth/callback`.
+2. Move the OAuth consent screen from "Testing" to "Production" (or add
+   test users) - only accounts explicitly allowed under "Testing" can sign
+   in otherwise, and the whole point is to let anyone sign in.
+3. Set `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET`,
+   `OAUTH_REDIRECT_BASE_URL`, `OWNER_EMAIL`, and `SECRET_ENCRYPTION_KEY` in
+   `.env`.
+4. Run `python scripts/migrate_owner_to_users_table.py` once, using the
+   original `GOOGLE_CALENDAR_REFRESH_TOKEN`/`GOOGLE_CALENDAR_ID`/
+   `TELEGRAM_CHAT_ID` values from before this migration, to carry the
+   owner's existing setup into the new `users` table.
+5. Remove the old `GOOGLE_CALENDAR_CLIENT_ID`/`_SECRET`/
+   `GOOGLE_CALENDAR_REFRESH_TOKEN`/`GOOGLE_CALENDAR_ID`/`TELEGRAM_CHAT_ID`
+   values from `.env` - they're no longer read by the app.
+6. `docker compose up -d --build` to pick up the new dependency
+   (`authlib`) and code.
 
 ## Known issue: silent session refresh is broken under this deployment
 
