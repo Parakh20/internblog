@@ -128,3 +128,19 @@ def test_is_admin_matches_owner_email_only(monkeypatch):
     monkeypatch.setattr(settings, "owner_email", "owner@example.com")
     assert auth.is_admin(User(email="owner@example.com"))
     assert not auth.is_admin(User(email="someone-else@example.com"))
+
+
+def test_is_email_allowed_unrestricted_when_allowlist_empty(monkeypatch):
+    monkeypatch.setattr(settings, "allowed_emails", "")
+    assert auth.is_email_allowed("anyone@example.com")
+
+
+def test_is_email_allowed_matches_allowlist_case_insensitively(monkeypatch):
+    monkeypatch.setattr(settings, "allowed_emails", "Someone@Example.com, other@example.com")
+    assert auth.is_email_allowed("someone@example.com")
+    assert auth.is_email_allowed("OTHER@EXAMPLE.COM")
+
+
+def test_is_email_allowed_rejects_email_not_on_allowlist(monkeypatch):
+    monkeypatch.setattr(settings, "allowed_emails", "someone@example.com")
+    assert not auth.is_email_allowed("stranger@example.com")

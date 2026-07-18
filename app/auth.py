@@ -132,3 +132,11 @@ def delete_session(db: DBSession, session_id: str | None) -> None:
 
 def is_admin(user: User) -> bool:
     return user.email == settings.owner_email
+
+
+def is_email_allowed(email: str) -> bool:
+    """Gate on the ALLOWED_EMAILS allowlist, checked before a User row is
+    ever created for a new sign-in - an empty allowlist means unrestricted
+    (pre-allowlist behavior), matching Settings.allowed_email_set."""
+    allowed = settings.allowed_email_set
+    return not allowed or email.lower() in allowed
