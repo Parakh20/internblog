@@ -60,18 +60,35 @@ def _upcoming_row(event: dict) -> str:
     )
 
 
+def _telegram_section(user: User, connect_url: str | None) -> str:
+    if user.telegram_chat_id:
+        return (
+            "<p>Telegram notifications are connected.</p>"
+            '<form method="post" action="/settings/disconnect-telegram">'
+            '<button type="submit">Disconnect Telegram</button>'
+            "</form>"
+        )
+    if connect_url:
+        return (
+            "<p>Not connected. Tap the link below, then hit Start in Telegram - "
+            "no chat ID to find or paste.</p>"
+            f'<a class="btn" href="{escape(connect_url)}">Connect Telegram</a>'
+        )
+    return "<p>Telegram connection is not configured on this server.</p>"
+
+
 def render_calendar_view(
     user: User,
     upcoming: list[dict],
     recent: list[dict],
     total_extractions: int,
     status: dict,
+    connect_url: str | None,
     is_admin: bool,
 ) -> str:
     admin_link = '<a href="/admin">Admin</a>' if is_admin else ""
     rows = "\n".join(_upcoming_row(e) for e in upcoming) or "<p>Nothing upcoming.</p>"
     sync_status = "syncing to your Google Calendar" if user.calendar_sync_enabled else "sync paused"
-    telegram_value = escape(user.telegram_chat_id or "")
 
     last_fetch = status.get("last_fetch") or {}
     recent_rows = "\n".join(_extraction_row(r, show_posted=True) for r in recent) or (
@@ -94,10 +111,11 @@ def render_calendar_view(
     <h2>Settings</h2>
     <p>Your events are {escape(sync_status)} ({escape(user.calendar_id or "not created yet")}).</p>
     <form method="post" action="/settings">
-      <label>Telegram chat ID (optional): <input type="text" name="telegram_chat_id" value="{telegram_value}"></label>
       <label><input type="checkbox" name="calendar_sync_enabled" {"checked" if user.calendar_sync_enabled else ""}> Sync to my Google Calendar</label>
       <button type="submit">Save</button>
     </form>
+    <h3>Telegram notifications</h3>
+    {_telegram_section(user, connect_url)}
   </div>
   <div class="card">
     <h2>Status</h2>

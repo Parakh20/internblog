@@ -20,9 +20,11 @@ from app.db import SessionLocal, init_db
 from app.extraction import CALENDAR_CATEGORIES
 from app.logging_setup import setup_logging
 from app.models import Extraction, FetchLog, Post, User
+from app.notifications import send_telegram_message
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
 from app.site import render_calendar_view, render_login_page
+from app.telegram_link import build_connect_url, generate_link_code, parse_start_command
 from app.timeutil import parse_gmt
 
 # Sort key for "no date" extractions in the dashboard's newest-event-first
@@ -183,6 +185,17 @@ def login_page() -> str:
 def home(user: User = Depends(get_current_user_or_redirect)) -> str:
     status = _compute_status()
     with SessionLocal() as db:
+        db_user = db.query(User).filter_by(id=user.id).one()
+        if not db_user.telegram_chat_id and not db_user.telegram_link_code:
+            db_user.telegram_link_code = generate_link_code()
+            db.commit()
+        connect_url = (
+            build_connect_url(settings.telegram_bot_username, db_user.telegram_link_code)
+            if db_user.telegram_link_code
+            else None
+        )
+        user = db_user
+
         total_extractions = db.scalar(select(func.count(Extraction.id))) or 0
 
         calendar_rows = db.execute(
@@ -225,7 +238,7 @@ def home(user: User = Depends(get_current_user_or_redirect)) -> str:
             reverse=True,
         )
     return render_calendar_view(
-        user, upcoming, recent, total_extractions, status, is_admin=auth.is_admin(user)
+        user, upcoming, recent, total_extractions, status, connect_url, is_admin=auth.is_admin(user)
     )
 
 
@@ -233,15 +246,54 @@ def home(user: User = Depends(get_current_user_or_redirect)) -> str:
 def save_settings(
     request: Request,
     user: User = Depends(get_current_user_or_redirect),
-    telegram_chat_id: str = Form(""),
     calendar_sync_enabled: bool = Form(False),
 ) -> Response:
     with SessionLocal() as db:
         db_user = db.query(User).filter_by(id=user.id).one()
-        db_user.telegram_chat_id = telegram_chat_id.strip() or None
         db_user.calendar_sync_enabled = calendar_sync_enabled
         db.commit()
     return RedirectResponse("/", status_code=303)
+
+
+@app.post("/settings/disconnect-telegram")
+def disconnect_telegram(user: User = Depends(get_current_user_or_redirect)) -> Response:
+    with SessionLocal() as db:
+        db_user = db.query(User).filter_by(id=user.id).one()
+        db_user.telegram_chat_id = None
+        db.commit()
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/telegram/webhook")
+async def telegram_webhook(request: Request) -> dict:
+    """Receives every Telegram Bot API Update (registered via setWebhook's
+    secret_token param, see docs/deployment.md). Only /start <code>
+    messages do anything - everything else is a silent no-op, matching
+    Telegram's expectation that a webhook always returns 200 quickly."""
+    if not secrets.compare_digest(
+        request.headers.get("X-Telegram-Bot-Api-Secret-Token", ""), settings.telegram_webhook_secret
+    ):
+        raise HTTPException(status_code=403)
+
+    update = await request.json()
+    parsed = parse_start_command(update)
+    if parsed is None:
+        return {"ok": True}
+    chat_id, code = parsed
+
+    with SessionLocal() as db:
+        matched = db.query(User).filter_by(telegram_link_code=code).one_or_none()
+        if matched is None:
+            return {"ok": True}
+        matched.telegram_chat_id = str(chat_id)
+        matched.telegram_link_code = None
+        db.commit()
+
+    send_telegram_message(
+        settings.telegram_bot_token, str(chat_id),
+        "You're connected! internblog will send internship deadline updates here.",
+    )
+    return {"ok": True}
 
 
 @app.get("/admin", response_class=HTMLResponse)

@@ -46,6 +46,14 @@ class Settings(BaseSettings):
     # chat id is per-user now (see User.telegram_chat_id in app/models.py);
     # only the bot token is still a single global setting.
     telegram_bot_token: str = ""
+    # Public @username of the bot, used to build the /start deep link shown
+    # on the settings page (t.me/<username>?start=<code>).
+    telegram_bot_username: str = ""
+    # Shared secret Telegram echoes back in the X-Telegram-Bot-Api-Secret-Token
+    # header on every webhook call (set via setWebhook's secret_token param),
+    # so /telegram/webhook can reject requests that don't actually come from
+    # Telegram before trusting any chat_id in the body.
+    telegram_webhook_secret: str = ""
 
     # ICS calendar feed of application deadlines, served at
     # /calendar/{calendar_feed_token}.ics. The token keeps the feed

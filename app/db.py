@@ -45,6 +45,15 @@ def _add_missing_columns() -> None:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE extractions DROP COLUMN is_job_posting"))
 
+    if "users" in inspector.get_table_names():
+        users_columns = {c["name"] for c in inspector.get_columns("users")}
+        if "telegram_link_code" not in users_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN telegram_link_code VARCHAR(64)"))
+                conn.execute(
+                    text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_telegram_link_code ON users (telegram_link_code)")
+                )
+
 
 def init_db() -> None:
     Base.metadata.create_all(engine)

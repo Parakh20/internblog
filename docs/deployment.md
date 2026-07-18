@@ -110,10 +110,11 @@ curl https://your-hostname.duckdns.org/health
 ## 7. Wire up notifications
 
 **Telegram**: message [@BotFather](https://t.me/BotFather) to create a bot
-and get `TELEGRAM_BOT_TOKEN` (set once, globally, in `.env`). Each signed-in
-user then sets their own chat id from `/settings`: send the bot any message,
-visit `https://api.telegram.org/bot<token>/getUpdates` to read their `chat_id`
-from the JSON response, and paste it into the form.
+and get `TELEGRAM_BOT_TOKEN` and its `@username` (`TELEGRAM_BOT_USERNAME`),
+set once, globally, in `.env`. Each signed-in user then connects their own
+chat from `/settings` by tapping a `/start` deep link and hitting Start in
+Telegram - no manual chat-id lookup. This requires a webhook, registered
+once (see §8 below).
 
 **Google Calendar**: Google Calendar → Settings → Add calendar → From URL →
 `https://your-hostname.duckdns.org/calendar/<CALENDAR_FEED_TOKEN>.ics`.
@@ -143,6 +144,21 @@ calendar feed is for deadline tracking over time, not real-time alerts.
    values from `.env` - they're no longer read by the app.
 6. `docker compose up -d --build` to pick up the new dependency
    (`authlib`) and code.
+
+## 9. Telegram /start deep link setup
+
+1. Set `TELEGRAM_BOT_USERNAME` (no `@`) and a random `TELEGRAM_WEBHOOK_SECRET`
+   in `.env`.
+2. Register the webhook once, from anywhere that can reach
+   `api.telegram.org` (does not need to be the server itself):
+   ```bash
+   curl -F "url=https://your-hostname.duckdns.org/telegram/webhook" \
+        -F "secret_token=<same value as TELEGRAM_WEBHOOK_SECRET>" \
+        https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook
+   ```
+3. `docker compose up -d --build` to pick up the new env vars.
+4. Verify: `https://api.telegram.org/bot<token>/getWebhookInfo` should show
+   your URL with no `last_error_message`.
 
 ## Known issue: silent session refresh is broken under this deployment
 

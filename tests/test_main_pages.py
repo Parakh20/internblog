@@ -61,15 +61,38 @@ def test_admin_route_200s_for_owner(client, _fresh_db):
     assert response.status_code == 200
 
 
-def test_settings_updates_telegram_chat_id_and_sync_toggle(client, _fresh_db):
+def test_settings_updates_sync_toggle(client, _fresh_db):
     _login_as(client, _fresh_db, "user2@example.com")
-    response = client.post("/settings", data={"telegram_chat_id": "555"}, follow_redirects=False)
+    response = client.post("/settings", data={}, follow_redirects=False)
     assert response.status_code == 303
 
     db = _fresh_db()
     updated = db.query(User).filter_by(email="user2@example.com").one()
-    assert updated.telegram_chat_id == "555"
     assert updated.calendar_sync_enabled is False  # unchecked checkbox omits the field entirely
+
+
+def test_disconnect_telegram_clears_chat_id(client, _fresh_db):
+    user = _login_as(client, _fresh_db, "user3@example.com")
+    db = _fresh_db()
+    db.query(User).filter_by(id=user.id).update({"telegram_chat_id": "12345"})
+    db.commit()
+
+    response = client.post("/settings/disconnect-telegram", follow_redirects=False)
+    assert response.status_code == 303
+
+    db2 = _fresh_db()
+    updated = db2.query(User).filter_by(id=user.id).one()
+    assert updated.telegram_chat_id is None
+
+
+def test_home_page_generates_a_telegram_link_code_when_not_connected(client, _fresh_db):
+    _login_as(client, _fresh_db, "user4@example.com")
+    response = client.get("/")
+    assert response.status_code == 200
+
+    db = _fresh_db()
+    updated = db.query(User).filter_by(email="user4@example.com").one()
+    assert updated.telegram_link_code is not None
 
 
 def test_cycle_route_404s_for_non_admin(client, _fresh_db, monkeypatch):

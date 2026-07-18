@@ -99,6 +99,10 @@ class User(Base):
     calendar_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     calendar_sync_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     telegram_chat_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Single-use code embedded in the /start deep link (t.me/<bot>?start=<code>)
+    # used to correlate an inbound Telegram /start message back to this user
+    # without them ever seeing or copying a raw chat_id. Cleared once used.
+    telegram_link_code: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
