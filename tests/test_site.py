@@ -74,7 +74,7 @@ def test_calendar_view_lists_full_database_for_every_user():
     html = _render(
         user,
         recent=[{
-            "category": "new_listing", "company": "Quantbox", "role": "Quant Researcher",
+            "post_id": 1, "category": "new_listing", "company": "Quantbox", "role": "Quant Researcher",
             "deadline": "2026-07-19T14:00:00+05:30", "link": "https://x", "posted_at": "2026-07-17T10:00:00",
             "created_at": "2026-07-17T10:05:00+00:00",
         }],
@@ -89,7 +89,7 @@ def test_calendar_view_database_link_blocks_unsafe_scheme():
     html = _render(
         user,
         recent=[{
-            "category": "new_listing", "company": "Acme", "role": None,
+            "post_id": 2, "category": "new_listing", "company": "Acme", "role": None,
             "deadline": None, "link": "javascript:alert(1)", "posted_at": None, "created_at": None,
         }],
         total_extractions=1,

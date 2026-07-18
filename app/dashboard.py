@@ -59,7 +59,7 @@ def _safe_link(link: str) -> str:
 def _extraction_row(r: dict, show_posted: bool = False) -> str:
     extra = f"<td>{escape(_fmt_posted(r['posted_at']))}</td>" if show_posted else ""
     return (
-        f"<tr>"
+        f'<tr style="cursor:pointer" onclick="location.href=\'/posts/{r["post_id"]}\'">'
         f"<td>{escape(r['category'])}</td>"
         f"<td>{escape(r['company'] or '-')}</td>"
         f"<td>{escape(r['role'] or '-')}</td>"

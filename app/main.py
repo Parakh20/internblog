@@ -259,6 +259,7 @@ def home(request: Request) -> str:
         recent = sorted(
             (
                 {
+                    "post_id": post.id,
                     "category": extraction.category,
                     "company": extraction.company,
                     "role": extraction.role,
@@ -350,6 +351,7 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
         upcoming = sorted(
             (
                 {
+                    "post_id": post.id,
                     "category": extraction.category,
                     "company": extraction.company,
                     "role": extraction.role,
@@ -362,12 +364,13 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
             key=lambda r: r["deadline"],
         )
 
-        recent_rows = db.execute(
+        recent_rows_query = db.execute(
             select(Extraction, Post).join(Post, Extraction.post_id == Post.id)
         ).all()
         recent = sorted(
             (
                 {
+                    "post_id": post.id,
                     "category": extraction.category,
                     "company": extraction.company,
                     "role": extraction.role,
@@ -376,7 +379,7 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
                     "posted_at": post.date_gmt,
                     "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
                 }
-                for extraction, post in recent_rows
+                for extraction, post in recent_rows_query
             ),
             # Newest post first, by when it actually appeared on the blog -
             # not the extracted deadline, and not our own extraction time.
