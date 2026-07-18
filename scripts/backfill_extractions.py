@@ -25,7 +25,7 @@ logger = logging.getLogger("backfill")
 def main() -> int:
     setup_logging(settings.log_dir)
     init_db()
-    if not settings.llm_api_key:
+    if not (settings.groq_api_key or settings.llm_api_key):
         logger.error("LLM API key is not set (LLM_API_KEY, OPENROUTER_API_KEY, or GROQ_API_KEY)")
         return 1
 

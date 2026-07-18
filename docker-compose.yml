@@ -31,5 +31,25 @@ services:
       - ./data:/app/data
       - ./logs:/app/logs
 
+  # Reverse proxy with automatic HTTPS, so the /calendar/{token}.ics feed is
+  # reachable by Google's own servers (a plain localhost port is not enough
+  # for Google Calendar's URL subscription to poll). Only enabled once
+  # CADDY_DOMAIN is set in .env; see docs/deployment.md.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - monitor
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

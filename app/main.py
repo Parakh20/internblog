@@ -1,19 +1,30 @@
 """FastAPI app: health endpoint plus the APScheduler-driven monitoring loop."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Response
+from fastapi.responses import HTMLResponse
 from sqlalchemy import func, select, text
 
 from app.blog_client import BlogClient
+from app.calendar_feed import DeadlineEvent, build_ics
 from app.config import settings
+from app.dashboard import render_dashboard
 from app.db import SessionLocal, init_db
+from app.extraction import CALENDAR_CATEGORIES
 from app.logging_setup import setup_logging
 from app.models import Extraction, FetchLog, Post
-from app.pipeline import run_cycle
+from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
+from app.timeutil import parse_gmt
+
+# Sort key for "no date" extractions in the dashboard's newest-event-first
+# ordering - sorts below every real date rather than needing special-casing.
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +51,10 @@ async def lifespan(app: FastAPI):
     )
     scheduler.start()
     logger.info("scheduler started, polling every %d minutes", settings.poll_interval_minutes)
-    cycle_job()
+    # Run off the event loop thread: cycle_job() reaches session_refresh's
+    # sync_playwright(), which raises if called from a thread with a running
+    # asyncio loop - true here since lifespan itself runs on that loop.
+    await asyncio.to_thread(cycle_job)
     yield
     scheduler.shutdown(wait=False)
 
@@ -48,8 +62,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="internblog-monitor", lifespan=lifespan)
 
 
-@app.get("/health")
-def health() -> dict:
+def _compute_status() -> dict:
     db_ok = True
     counts = {}
     last_fetch = None
@@ -91,8 +104,96 @@ def health() -> dict:
     }
 
 
+@app.get("/health")
+def health() -> dict:
+    return _compute_status()
+
+
+@app.get("/", response_class=HTMLResponse)
+def dashboard() -> str:
+    status = _compute_status()
+    with SessionLocal() as db:
+        total_extractions = db.scalar(select(func.count(Extraction.id))) or 0
+
+        calendar_rows = db.execute(
+            select(Extraction, Post)
+            .join(Post, Extraction.post_id == Post.id)
+            .where(Extraction.category.in_([c.value for c in CALENDAR_CATEGORIES]))
+            .where(Extraction.deadline.is_not(None))
+        ).all()
+        upcoming = sorted(
+            (
+                {
+                    "category": extraction.category,
+                    "company": extraction.company,
+                    "role": extraction.role,
+                    "deadline": extraction.deadline,
+                    "link": post.link,
+                }
+                for extraction, post in calendar_rows
+                if _is_upcoming(extraction.deadline)
+            ),
+            key=lambda r: r["deadline"],
+        )
+
+        recent_rows = db.execute(
+            select(Extraction, Post).join(Post, Extraction.post_id == Post.id)
+        ).all()
+        recent = sorted(
+            (
+                {
+                    "category": extraction.category,
+                    "company": extraction.company,
+                    "role": extraction.role,
+                    "deadline": extraction.deadline,
+                    "link": post.link,
+                    "posted_at": post.date_gmt,
+                    "created_at": extraction.created_at.isoformat() if extraction.created_at else None,
+                }
+                for extraction, post in recent_rows
+            ),
+            # Newest post first, by when it actually appeared on the blog -
+            # not the extracted deadline, and not our own extraction time.
+            key=lambda r: parse_gmt(r["posted_at"]) or _EPOCH,
+            reverse=True,
+        )
+    return render_dashboard(status, upcoming, recent, total_extractions)
+
+
 @app.post("/cycle")
 def trigger_cycle() -> dict:
     """Manually trigger one monitoring cycle (debugging aid)."""
     cycle_job()
     return {"triggered": True, "session": monitor.status()}
+
+
+@app.get("/calendar/{token}.ics")
+def calendar_feed(token: str) -> Response:
+    """ICS feed of application deadlines for Google Calendar subscription.
+    The token guards the feed since it must be publicly fetchable."""
+    if not settings.calendar_feed_token or token != settings.calendar_feed_token:
+        raise HTTPException(status_code=404)
+
+    with SessionLocal() as db:
+        rows = (
+            db.execute(
+                select(Extraction, Post)
+                .join(Post, Extraction.post_id == Post.id)
+                .where(Extraction.category.in_([c.value for c in CALENDAR_CATEGORIES]))
+                .where(Extraction.deadline.is_not(None))
+            )
+            .all()
+        )
+        events = [
+            DeadlineEvent(
+                uid=f"extraction-{extraction.id}",
+                company=extraction.company or "Unknown company",
+                role=extraction.role,
+                deadline=extraction.deadline,
+                deadline_end=extraction.deadline_end,
+                link=post.link,
+            )
+            for extraction, post in rows
+        ]
+
+    return Response(content=build_ics(events), media_type="text/calendar")

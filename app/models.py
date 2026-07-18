@@ -42,15 +42,31 @@ class Extraction(Base):
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str | None] = mapped_column(String(255), nullable=True)
     deadline: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    deadline_end: Mapped[str | None] = mapped_column(String(64), nullable=True)
     cgpa_cutoff: Mapped[str | None] = mapped_column(String(64), nullable=True)
     eligible_branches: Mapped[str | None] = mapped_column(Text, nullable=True)
     stipend: Mapped[str | None] = mapped_column(String(255), nullable=True)
     location: Mapped[str | None] = mapped_column(String(255), nullable=True)
     application_link: Mapped[str | None] = mapped_column(Text, nullable=True)
+    category: Mapped[str] = mapped_column(String(32), default="other", index=True)
     raw_json: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     post: Mapped["Post"] = relationship(back_populates="extractions")
+
+
+class TelegramNotification(Base):
+    """Tracks the last message sent per (company, event type) group, so a
+    follow-up post (e.g. a deadline_extension after a new_listing) edits
+    that message in place instead of sending a duplicate - mirrors the
+    calendar event grouping in app/google_calendar.py."""
+
+    __tablename__ = "telegram_notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_key: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    message_id: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
 class FetchLog(Base):

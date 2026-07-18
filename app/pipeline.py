@@ -7,22 +7,43 @@ endpoint and logs always reflect reality.
 import json
 import logging
 import time
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
 from app.blog_client import BlogClient, CookieLoadError, SessionExpiredError
 from app.change_detection import ChangeSet, KnownPost, detect_changes, post_hash
 from app.config import settings
-from app.extraction import dedup_key, extract_posting, make_llm_client
-from app.models import Extraction, FetchLog, Post
+from app.extraction import (
+    CALENDAR_CATEGORIES,
+    CALENDAR_EVENT_GROUP,
+    NOTIFY_CATEGORIES,
+    NOTIFY_EVENT_GROUP,
+    PostCategory,
+    dedup_key,
+    extract_posting,
+    make_llm_client,
+)
+from app.google_calendar import event_id_for, event_id_for_company, get_access_token, upsert_event
+from app.models import Extraction, FetchLog, Post, TelegramNotification
+from app.notifications import edit_telegram_message, format_notification_message, send_telegram_message
 from app.session_refresh import silent_refresh
 from app.session_state import SessionMonitor
 from app.snapshots import save_snapshot
+from app.timeutil import parse_ist
 
 logger = logging.getLogger(__name__)
 
-REFRESH_COOLDOWN_SECONDS = 600
+REFRESH_COOLDOWN_SECONDS = 90
 _last_refresh_attempt = 0.0
+
+
+def _is_upcoming(iso_value: str) -> bool:
+    """True if a deadline hasn't passed yet. Guards against notifying or
+    calendar-pushing already-elapsed dates - e.g. when backfilling
+    extraction for old posts that were never processed the first time."""
+    dt = parse_ist(iso_value)
+    return dt is not None and dt > datetime.now(timezone.utc)
 
 
 def _try_silent_refresh() -> bool:
@@ -72,16 +93,26 @@ def upsert_post(db: Session, wp_post: dict) -> Post:
     return row
 
 
+def _build_extraction_attempts() -> list[tuple]:
+    attempts = []
+    if settings.groq_api_key:
+        groq_client = make_llm_client(settings.groq_base_url, settings.groq_api_key)
+        attempts.append((groq_client, settings.groq_model))
+    if settings.llm_api_key:
+        openrouter_client = make_llm_client(settings.llm_base_url, settings.llm_api_key)
+        attempts.extend((openrouter_client, model) for model in settings.llm_model_list)
+    return attempts
+
+
 def run_extraction(db: Session, row: Post) -> None:
     if not settings.extraction_enabled:
         return
-    if not settings.llm_api_key:
-        logger.warning("LLM API key not set, skipping extraction for post %s", row.wp_id)
+    attempts = _build_extraction_attempts()
+    if not attempts:
+        logger.warning("no LLM API key set, skipping extraction for post %s", row.wp_id)
         return
-    client = make_llm_client(settings.llm_base_url, settings.llm_api_key)
     parsed = extract_posting(
-        client,
-        settings.llm_model,
+        attempts,
         title=row.title,
         content_html=row.raw_html,
         post_date=row.date_gmt,
@@ -95,24 +126,110 @@ def run_extraction(db: Session, row: Post) -> None:
     if existing is not None:
         logger.info("extraction unchanged for post %s (dedup key match)", row.wp_id)
         return
-    db.add(
-        Extraction(
-            post_id=row.id,
-            dedup_key=key,
+    extraction = Extraction(
+        post_id=row.id,
+        dedup_key=key,
+        company=parsed.company,
+        role=parsed.role,
+        deadline=parsed.deadline,
+        deadline_end=parsed.event_end,
+        cgpa_cutoff=parsed.cgpa_cutoff,
+        eligible_branches=json.dumps(parsed.eligible_branches),
+        stipend=parsed.stipend,
+        location=parsed.location,
+        application_link=parsed.application_link,
+        category=parsed.category,
+        raw_json=parsed.model_dump_json(),
+    )
+    db.add(extraction)
+    db.flush()  # assigns extraction.id, needed for the calendar event key below
+    logger.info(
+        "extracted post %s: category=%s company=%r role=%r deadline=%r",
+        row.wp_id, parsed.category, parsed.company, parsed.role, parsed.deadline,
+    )
+    # Only a stated deadline can be stale; a post with no deadline at all
+    # (e.g. a listing that doesn't mention one) is never suppressed here.
+    is_stale = bool(parsed.deadline) and not _is_upcoming(parsed.deadline)
+    if (
+        parsed.category in NOTIFY_CATEGORIES
+        and not is_stale
+        and settings.telegram_bot_token
+        and settings.telegram_chat_id
+    ):
+        message = format_notification_message(
+            category=parsed.category,
             company=parsed.company,
             role=parsed.role,
             deadline=parsed.deadline,
-            cgpa_cutoff=parsed.cgpa_cutoff,
-            eligible_branches=json.dumps(parsed.eligible_branches),
             stipend=parsed.stipend,
-            location=parsed.location,
-            application_link=parsed.application_link,
-            raw_json=parsed.model_dump_json(),
         )
+        send_or_edit_telegram(db, extraction, message)
+    if (
+        parsed.category in CALENDAR_CATEGORIES
+        and parsed.deadline
+        and not is_stale
+        and settings.google_calendar_enabled
+    ):
+        push_calendar_event(extraction, row)
+
+
+def send_or_edit_telegram(db: Session, extraction: Extraction, message: str) -> None:
+    """Edit the existing Telegram message for this (company, event type)
+    group if one was sent before, so e.g. a deadline_extension updates the
+    original new_listing notification instead of sending a duplicate. Falls
+    back to sending a new message when there's no group (company-less
+    posts) or no prior message, or if the edit itself fails."""
+    group = NOTIFY_EVENT_GROUP.get(PostCategory(extraction.category))
+    group_key = f"{extraction.company.strip().lower()}|{group}" if extraction.company and group else None
+
+    existing = (
+        db.query(TelegramNotification).filter_by(group_key=group_key).one_or_none()
+        if group_key
+        else None
     )
-    logger.info(
-        "extracted post %s: company=%r role=%r deadline=%r",
-        row.wp_id, parsed.company, parsed.role, parsed.deadline,
+    if existing is not None and edit_telegram_message(
+        settings.telegram_bot_token, settings.telegram_chat_id, existing.message_id, message
+    ):
+        return
+
+    message_id = send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, message)
+    if message_id is None or group_key is None:
+        return
+    if existing is not None:
+        existing.message_id = message_id
+    else:
+        db.add(TelegramNotification(group_key=group_key, message_id=message_id))
+    db.commit()
+
+
+def push_calendar_event(extraction: Extraction, row: Post) -> None:
+    access_token = get_access_token(
+        settings.google_calendar_client_id,
+        settings.google_calendar_client_secret,
+        settings.google_calendar_refresh_token,
+    )
+    if access_token is None:
+        return
+    summary = f"{extraction.company or 'Unknown company'}" + (f" - {extraction.role}" if extraction.role else "")
+    group = CALENDAR_EVENT_GROUP.get(PostCategory(extraction.category))
+    # Group by (company, event type) when both are known, so e.g. a
+    # deadline_extension modifies the original new_listing's calendar event
+    # in place instead of creating a duplicate. Falls back to a per-row id
+    # for company-less posts (mock tests, admin notices) which can't be
+    # meaningfully grouped this way anyway.
+    event_id = (
+        event_id_for_company(extraction.company, group)
+        if extraction.company and group
+        else event_id_for(extraction.id)
+    )
+    upsert_event(
+        access_token,
+        settings.google_calendar_id,
+        event_id,
+        summary=summary,
+        description=row.link,
+        start_iso=extraction.deadline,
+        end_iso=extraction.deadline_end,
     )
 
 
