@@ -17,6 +17,8 @@ from app.config import settings
 from app.extraction import (
     CALENDAR_CATEGORIES,
     CALENDAR_EVENT_GROUP,
+    DEADLINE_CALENDAR_CATEGORIES,
+    EVENT_CALENDAR_CATEGORIES,
     NOTIFY_CATEGORIES,
     NOTIFY_EVENT_GROUP,
     PostCategory,
@@ -26,6 +28,7 @@ from app.extraction import (
 )
 from app.crypto import decrypt_token
 from app.google_calendar import (
+    create_secondary_calendar,
     event_id_for,
     event_id_for_company,
     get_access_token,
@@ -191,12 +194,35 @@ def send_or_edit_telegram_for_user(db: Session, user: User, extraction: Extracti
     db.commit()
 
 
-def push_calendar_event_for_user(user: User, extraction: Extraction, row: Post) -> None:
+def get_or_create_event_calendar(db: Session, user: User, access_token: str) -> str | None:
+    """Lazily creates the user's secondary "Internblog Events" calendar on
+    first use, rather than at login (app/auth.py::upsert_user_from_google) -
+    this means users who signed in before this feature existed get it
+    automatically on their next test/OA/PPT post, with no re-auth needed."""
+    if user.event_calendar_id:
+        return user.event_calendar_id
+    calendar_id = create_secondary_calendar(access_token, "Internblog Events")
+    if calendar_id is None:
+        return None
+    user.event_calendar_id = calendar_id
+    db.commit()
+    return calendar_id
+
+
+def push_calendar_event_for_user(db: Session, user: User, extraction: Extraction, row: Post) -> None:
     refresh_token = decrypt_token(user.calendar_refresh_token_encrypted)
     access_token = get_access_token(
         settings.google_oauth_client_id, settings.google_oauth_client_secret, refresh_token
     )
     if access_token is None:
+        return
+    if extraction.category in {c.value for c in DEADLINE_CALENDAR_CATEGORIES}:
+        calendar_id = user.calendar_id
+    elif extraction.category in {c.value for c in EVENT_CALENDAR_CATEGORIES}:
+        calendar_id = get_or_create_event_calendar(db, user, access_token)
+    else:
+        return
+    if calendar_id is None:
         return
     summary = f"{extraction.company or 'Unknown company'}" + (f" - {extraction.role}" if extraction.role else "")
     group = CALENDAR_EVENT_GROUP.get(PostCategory(extraction.category))
@@ -206,7 +232,7 @@ def push_calendar_event_for_user(user: User, extraction: Extraction, row: Post) 
         else event_id_for(extraction.id)
     )
     upsert_event(
-        access_token, user.calendar_id, event_id,
+        access_token, calendar_id, event_id,
         summary=summary, description=row.link,
         start_iso=extraction.deadline, end_iso=extraction.deadline_end,
     )
@@ -222,7 +248,7 @@ def push_to_all_users(db: Session, extraction: Extraction, row: Post) -> None:
     for user in db.query(User).all():
         if is_calendar_category and user.calendar_sync_enabled and user.calendar_refresh_token_encrypted:
             try:
-                push_calendar_event_for_user(user, extraction, row)
+                push_calendar_event_for_user(db, user, extraction, row)
             except Exception:
                 logger.exception("calendar push failed for user %s", user.email)
         if user.telegram_chat_id:

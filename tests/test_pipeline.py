@@ -5,8 +5,16 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app import pipeline
+from app.config import settings
 from app.models import Base, Extraction, TelegramNotification, User
 from app.pipeline import _is_upcoming
+
+
+@pytest.fixture(autouse=True)
+def _fernet_key(monkeypatch):
+    from cryptography.fernet import Fernet
+
+    monkeypatch.setattr(settings, "secret_encryption_key", Fernet.generate_key().decode())
 
 
 @pytest.fixture
@@ -103,7 +111,7 @@ def test_unparseable_deadline_is_not_upcoming():
 
 def test_calendar_push_only_reaches_sync_enabled_users_with_a_refresh_token(db, monkeypatch):
     pushed = []
-    monkeypatch.setattr(pipeline, "push_calendar_event_for_user", lambda user, extraction, row: pushed.append(user.email))
+    monkeypatch.setattr(pipeline, "push_calendar_event_for_user", lambda db, user, extraction, row: pushed.append(user.email))
 
     synced = User(google_sub="s1", email="synced@example.com", calendar_sync_enabled=True, calendar_refresh_token_encrypted="ct")
     not_synced = User(google_sub="s2", email="off@example.com", calendar_sync_enabled=False, calendar_refresh_token_encrypted="ct")
@@ -151,7 +159,7 @@ def test_shortlist_result_never_reaches_calendar_push_but_still_sends_telegram(d
     telegram_sent = []
     monkeypatch.setattr(
         pipeline, "push_calendar_event_for_user",
-        lambda user, extraction, row: calendar_pushed.append(user.email),
+        lambda db, user, extraction, row: calendar_pushed.append(user.email),
     )
     monkeypatch.setattr(
         pipeline, "send_or_edit_telegram_for_user",
@@ -176,13 +184,13 @@ def test_shortlist_result_never_reaches_calendar_push_but_still_sends_telegram(d
 
 
 def test_one_users_push_failure_does_not_block_another_users_push(db, monkeypatch):
-    def flaky_calendar_push(user, extraction, row):
+    def flaky_calendar_push(db, user, extraction, row):
         if user.email == "broken@example.com":
             raise RuntimeError("revoked token")
 
     pushed_ok = []
-    monkeypatch.setattr(pipeline, "push_calendar_event_for_user", lambda user, extraction, row: (
-        flaky_calendar_push(user, extraction, row) or pushed_ok.append(user.email)
+    monkeypatch.setattr(pipeline, "push_calendar_event_for_user", lambda db, user, extraction, row: (
+        flaky_calendar_push(db, user, extraction, row) or pushed_ok.append(user.email)
     ))
 
     broken = User(google_sub="s6", email="broken@example.com", calendar_sync_enabled=True, calendar_refresh_token_encrypted="ct")
@@ -213,3 +221,123 @@ def test_send_or_edit_telegram_for_user_scopes_group_key_by_user(db, monkeypatch
 
     stored = db.query(TelegramNotification).one()
     assert str(user.id) in stored.group_key
+
+
+def test_get_or_create_event_calendar_creates_and_persists_on_first_call(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "create_secondary_calendar", lambda access_token, summary: "new-evt-cal")
+
+    user = User(google_sub="evt1", email="evt1@example.com")
+    db.add(user)
+    db.commit()
+
+    result = pipeline.get_or_create_event_calendar(db, user, "access-token")
+
+    assert result == "new-evt-cal"
+    assert user.event_calendar_id == "new-evt-cal"
+    fetched = db.query(User).filter_by(id=user.id).one()
+    assert fetched.event_calendar_id == "new-evt-cal"
+
+
+def test_get_or_create_event_calendar_reuses_existing(db, monkeypatch):
+    monkeypatch.setattr(
+        pipeline, "create_secondary_calendar",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not create again")),
+    )
+
+    user = User(google_sub="evt2", email="evt2@example.com", event_calendar_id="existing-cal")
+    db.add(user)
+    db.commit()
+
+    result = pipeline.get_or_create_event_calendar(db, user, "access-token")
+
+    assert result == "existing-cal"
+
+
+def test_get_or_create_event_calendar_returns_none_on_creation_failure(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "create_secondary_calendar", lambda access_token, summary: None)
+
+    user = User(google_sub="evt3", email="evt3@example.com")
+    db.add(user)
+    db.commit()
+
+    assert pipeline.get_or_create_event_calendar(db, user, "access-token") is None
+
+
+def test_push_calendar_event_for_user_routes_deadline_category_to_calendar_id(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "decrypt_token", lambda ciphertext: ciphertext)
+    monkeypatch.setattr(pipeline, "get_access_token", lambda *a: "access-token")
+    upserted = []
+    monkeypatch.setattr(
+        pipeline, "upsert_event",
+        lambda access_token, calendar_id, event_id, summary, description, start_iso, end_iso: upserted.append(calendar_id),
+    )
+
+    user = User(
+        google_sub="route1", email="route1@example.com",
+        calendar_id="deadline-cal", calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    from app.models import Post
+
+    post = Post(wp_id=10, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    extraction = Extraction(company="Acme", category="new_listing", deadline="2027-01-01T00:00:00+05:30")
+
+    pipeline.push_calendar_event_for_user(db, user, extraction, post)
+
+    assert upserted == ["deadline-cal"]
+
+
+def test_push_calendar_event_for_user_routes_event_category_to_event_calendar_id(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "decrypt_token", lambda ciphertext: ciphertext)
+    monkeypatch.setattr(pipeline, "get_access_token", lambda *a: "access-token")
+    upserted = []
+    monkeypatch.setattr(
+        pipeline, "upsert_event",
+        lambda access_token, calendar_id, event_id, summary, description, start_iso, end_iso: upserted.append(calendar_id),
+    )
+
+    user = User(
+        google_sub="route2", email="route2@example.com",
+        calendar_id="deadline-cal", event_calendar_id="events-cal", calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    from app.models import Post
+
+    post = Post(wp_id=11, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    extraction = Extraction(company="Acme", category="test_update", deadline="2027-01-01T00:00:00+05:30")
+
+    pipeline.push_calendar_event_for_user(db, user, extraction, post)
+
+    assert upserted == ["events-cal"]
+
+
+def test_push_calendar_event_for_user_lazily_creates_event_calendar(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "decrypt_token", lambda ciphertext: ciphertext)
+    monkeypatch.setattr(pipeline, "get_access_token", lambda *a: "access-token")
+    monkeypatch.setattr(pipeline, "create_secondary_calendar", lambda access_token, summary: "freshly-created-cal")
+    upserted = []
+    monkeypatch.setattr(
+        pipeline, "upsert_event",
+        lambda access_token, calendar_id, event_id, summary, description, start_iso, end_iso: upserted.append(calendar_id),
+    )
+
+    user = User(
+        google_sub="route3", email="route3@example.com",
+        calendar_id="deadline-cal", calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    from app.models import Post
+
+    post = Post(wp_id=12, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    extraction = Extraction(company="Acme", category="ppt", deadline="2027-01-01T00:00:00+05:30")
+
+    pipeline.push_calendar_event_for_user(db, user, extraction, post)
+
+    assert upserted == ["freshly-created-cal"]
+    assert user.event_calendar_id == "freshly-created-cal"
