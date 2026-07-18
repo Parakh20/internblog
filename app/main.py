@@ -73,7 +73,7 @@ class RedirectToLogin(Exception):
 
 @app.exception_handler(RedirectToLogin)
 def _redirect_to_login(request: Request, exc: RedirectToLogin) -> Response:
-    return RedirectResponse("/login", status_code=307)
+    return RedirectResponse("/login", status_code=303)
 
 
 OAUTH_STATE_COOKIE = "internblog_oauth_state"

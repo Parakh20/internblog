@@ -134,7 +134,7 @@ def test_post_detail_requires_login(client, _fresh_db):
     db.commit()
 
     response = client.get("/posts/1", follow_redirects=False)
-    assert response.status_code == 307
+    assert response.status_code == 303
     assert response.headers["location"] == "/login"
 
 
