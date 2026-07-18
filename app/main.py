@@ -191,6 +191,15 @@ def terms_page() -> str:
     return render_terms_page()
 
 
+@app.get("/google162e56c4a13e2140.html", response_class=HTMLResponse)
+def google_site_verification() -> str:
+    """Google Search Console domain-ownership verification file, required
+    before OAuth branding (privacy/terms links) can show on the real
+    consent screen. Content must match the file Search Console issued
+    exactly - do not reformat or add anything else to this response."""
+    return "google-site-verification: google162e56c4a13e2140.html"
+
+
 @app.get("/", response_class=HTMLResponse)
 def home(user: User = Depends(get_current_user_or_redirect)) -> str:
     status = _compute_status()

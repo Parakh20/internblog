@@ -47,6 +47,12 @@ def test_privacy_and_terms_pages_are_public(client):
     assert client.get("/terms").status_code == 200
 
 
+def test_google_site_verification_file_is_public_and_unmodified(client):
+    response = client.get("/google162e56c4a13e2140.html")
+    assert response.status_code == 200
+    assert response.text == "google-site-verification: google162e56c4a13e2140.html"
+
+
 def test_root_shows_calendar_view_when_logged_in(client, _fresh_db):
     _login_as(client, _fresh_db, "user@example.com")
     response = client.get("/")
