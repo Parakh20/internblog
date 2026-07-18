@@ -61,3 +61,23 @@ def test_session_round_trips_and_links_to_user():
 
     fetched = db.query(SessionRow).filter_by(id="tok-abc").one()
     assert fetched.user_id == user.id
+
+
+def test_user_round_trips_event_calendar_id():
+    db = _db()
+    user = User(google_sub="sub-evt", email="evt@example.com", calendar_id="cal-abc", event_calendar_id="cal-evt")
+    db.add(user)
+    db.commit()
+
+    fetched = db.query(User).filter_by(google_sub="sub-evt").one()
+    assert fetched.event_calendar_id == "cal-evt"
+
+
+def test_user_event_calendar_id_defaults_to_none():
+    db = _db()
+    user = User(google_sub="sub-noevt", email="noevt@example.com")
+    db.add(user)
+    db.commit()
+
+    fetched = db.query(User).filter_by(google_sub="sub-noevt").one()
+    assert fetched.event_calendar_id is None

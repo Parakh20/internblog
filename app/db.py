@@ -53,6 +53,9 @@ def _add_missing_columns() -> None:
                 conn.execute(
                     text("CREATE UNIQUE INDEX IF NOT EXISTS ix_users_telegram_link_code ON users (telegram_link_code)")
                 )
+        if "event_calendar_id" not in users_columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN event_calendar_id VARCHAR(255)"))
 
 
 def init_db() -> None:
