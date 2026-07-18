@@ -1,4 +1,11 @@
-from app.extraction import InternshipExtraction, PostCategory, dedup_key
+from app.extraction import (
+    CALENDAR_CATEGORIES,
+    DEADLINE_CALENDAR_CATEGORIES,
+    EVENT_CALENDAR_CATEGORIES,
+    InternshipExtraction,
+    PostCategory,
+    dedup_key,
+)
 
 
 def test_dedup_key_is_case_and_whitespace_insensitive():
