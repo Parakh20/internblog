@@ -38,7 +38,7 @@ def _login_as(client, session_factory, email):
 
 def test_root_requires_login(client):
     response = client.get("/", follow_redirects=False)
-    assert response.status_code == 307
+    assert response.status_code == 303
     assert response.headers["location"] == "/login"
 
 
@@ -64,9 +64,23 @@ def test_admin_route_200s_for_owner(client, _fresh_db):
 def test_settings_updates_telegram_chat_id_and_sync_toggle(client, _fresh_db):
     _login_as(client, _fresh_db, "user2@example.com")
     response = client.post("/settings", data={"telegram_chat_id": "555"}, follow_redirects=False)
-    assert response.status_code == 307
+    assert response.status_code == 303
 
     db = _fresh_db()
     updated = db.query(User).filter_by(email="user2@example.com").one()
     assert updated.telegram_chat_id == "555"
     assert updated.calendar_sync_enabled is False  # unchecked checkbox omits the field entirely
+
+
+def test_cycle_route_404s_for_non_admin(client, _fresh_db, monkeypatch):
+    monkeypatch.setattr(main, "cycle_job", lambda: None)
+    _login_as(client, _fresh_db, "not-owner@example.com")
+    response = client.post("/cycle")
+    assert response.status_code == 404
+
+
+def test_cycle_route_200s_for_admin(client, _fresh_db, monkeypatch):
+    monkeypatch.setattr(main, "cycle_job", lambda: None)
+    _login_as(client, _fresh_db, "owner@example.com")
+    response = client.post("/cycle")
+    assert response.status_code == 200

@@ -71,7 +71,7 @@ class RedirectToLogin(Exception):
 
 @app.exception_handler(RedirectToLogin)
 def _redirect_to_login(request: Request, exc: RedirectToLogin) -> Response:
-    return RedirectResponse("/login", status_code=307)
+    return RedirectResponse("/login", status_code=303)
 
 
 OAUTH_STATE_COOKIE = "internblog_oauth_state"
@@ -214,7 +214,7 @@ def save_settings(
         db_user.telegram_chat_id = telegram_chat_id.strip() or None
         db_user.calendar_sync_enabled = calendar_sync_enabled
         db.commit()
-    return RedirectResponse("/", status_code=307)
+    return RedirectResponse("/", status_code=303)
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -271,8 +271,10 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
 
 
 @app.post("/cycle")
-def trigger_cycle() -> dict:
-    """Manually trigger one monitoring cycle (debugging aid)."""
+def trigger_cycle(user: User = Depends(get_current_user_or_redirect)) -> dict:
+    """Manually trigger one monitoring cycle (debugging aid). Admin-only."""
+    if not auth.is_admin(user):
+        raise HTTPException(status_code=404)
     cycle_job()
     return {"triggered": True, "session": monitor.status()}
 

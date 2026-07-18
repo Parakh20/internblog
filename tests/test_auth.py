@@ -60,6 +60,34 @@ def test_upsert_user_from_google_updates_existing_user_without_recreating_calend
     assert created_calendars == []
 
 
+def test_upsert_user_from_google_adopts_migrated_owner_row_by_email(db, monkeypatch):
+    """Reproduces scripts/migrate_owner_to_users_table.py's placeholder-row
+    scenario: a pre-existing User row with a placeholder google_sub and the
+    owner's real email. On the owner's real first login, the profile
+    carries a different real google_sub but the same email - this must
+    adopt the existing row (updating its google_sub) rather than insert a
+    second row and violate the unique email constraint."""
+    monkeypatch.setattr(auth, "create_secondary_calendar", lambda access_token: "should-not-be-used")
+    placeholder = User(
+        google_sub="pending-owner@example.com", email="owner@example.com",
+        calendar_id="existing-cal", calendar_refresh_token_encrypted="ignored",
+    )
+    db.add(placeholder)
+    db.commit()
+    placeholder_id = placeholder.id
+
+    profile = {
+        "google_sub": "real-google-sub-123", "email": "owner@example.com", "name": "Owner",
+        "picture": None, "refresh_token": None, "access_token": "at-owner",
+    }
+
+    user = auth.upsert_user_from_google(db, profile)  # must not raise IntegrityError
+
+    assert user.id == placeholder_id
+    assert user.google_sub == "real-google-sub-123"
+    assert db.query(User).filter_by(email="owner@example.com").count() == 1
+
+
 def test_create_and_get_session_round_trips(db):
     user = User(google_sub="sub-3", email="c@example.com")
     db.add(user)

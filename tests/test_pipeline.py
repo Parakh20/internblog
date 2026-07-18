@@ -142,6 +142,39 @@ def test_telegram_push_only_reaches_users_with_a_chat_id(db, monkeypatch):
     assert sent_to == ["chat@example.com"]
 
 
+def test_shortlist_result_never_reaches_calendar_push_but_still_sends_telegram(db, monkeypatch):
+    """shortlist_result is in NOTIFY_CATEGORIES but deliberately excluded
+    from CALENDAR_CATEGORIES (nothing to attend/act on by a date) - it must
+    never reach push_calendar_event_for_user, even for an opted-in user,
+    while telegram push still happens since it's a valid NOTIFY category."""
+    calendar_pushed = []
+    telegram_sent = []
+    monkeypatch.setattr(
+        pipeline, "push_calendar_event_for_user",
+        lambda user, extraction, row: calendar_pushed.append(user.email),
+    )
+    monkeypatch.setattr(
+        pipeline, "send_or_edit_telegram_for_user",
+        lambda db, user, extraction, message: telegram_sent.append(user.email),
+    )
+
+    user = User(
+        google_sub="s6", email="optedin@example.com", telegram_chat_id="222",
+        calendar_sync_enabled=True, calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    extraction = Extraction(company="Acme", category="shortlist_result", deadline=None)
+    from app.models import Post
+
+    post = Post(wp_id=3, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    pipeline.push_to_all_users(db, extraction, post)
+
+    assert calendar_pushed == []
+    assert telegram_sent == ["optedin@example.com"]
+
+
 def test_one_users_push_failure_does_not_block_another_users_push(db, monkeypatch):
     def flaky_calendar_push(user, extraction, row):
         if user.email == "broken@example.com":

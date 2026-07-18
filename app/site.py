@@ -36,6 +36,16 @@ def render_login_page() -> str:
 </body></html>"""
 
 
+def _safe_link(link: str) -> str:
+    """Renders a clickable anchor only for http(s) links. Untrusted schemes
+    like javascript: or data: are rendered as inert escaped text instead,
+    since html.escape() alone prevents attribute breakout but not a
+    dangerous scheme executing on click."""
+    if link.startswith("http://") or link.startswith("https://"):
+        return f'<a href="{escape(link)}">post</a>'
+    return escape(link)
+
+
 def _upcoming_row(event: dict) -> str:
     dt = parse_ist(event["deadline"]) if event.get("deadline") else None
     when = dt.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST") if dt else "-"
@@ -44,7 +54,7 @@ def _upcoming_row(event: dict) -> str:
         f'<div class="upcoming-row">'
         f'<span class="chip">{escape(event["category"])}</span>'
         f'<strong>{escape(event["company"] or "Unknown company")}</strong>{role}'
-        f'<div>{escape(when)} &middot; <a href="{escape(event["link"])}">post</a></div>'
+        f'<div>{escape(when)} &middot; {_safe_link(event["link"])}</div>'
         f'</div>'
     )
 

@@ -69,8 +69,16 @@ def upsert_user_from_google(db: DBSession, profile: dict) -> User:
     using the access token from this same consent."""
     user = db.query(User).filter_by(google_sub=profile["google_sub"]).one_or_none()
     if user is None:
+        # Falls back to matching by email so a pre-existing row (e.g. the
+        # owner row created by scripts/migrate_owner_to_users_table.py with
+        # a placeholder google_sub) is adopted on first real login instead
+        # of colliding with the unique email constraint on insert.
+        user = db.query(User).filter_by(email=profile["email"]).one_or_none()
+    if user is None:
         user = User(google_sub=profile["google_sub"], email=profile["email"])
         db.add(user)
+    else:
+        user.google_sub = profile["google_sub"]
 
     user.email = profile["email"]
     user.name = profile.get("name")

@@ -34,3 +34,17 @@ def test_calendar_view_escapes_html_in_company_name():
         is_admin=False,
     )
     assert "<script>" not in html
+
+
+def test_calendar_view_does_not_render_javascript_uri_as_clickable_link():
+    user = User(email="u@example.com", telegram_chat_id=None, calendar_sync_enabled=True)
+    html = render_calendar_view(
+        user,
+        upcoming=[{
+            "category": "new_listing", "company": "Acme", "role": None,
+            "deadline": None, "link": "javascript:alert(1)",
+        }],
+        is_admin=False,
+    )
+    assert '<a href="javascript:alert(1)"' not in html
+    assert "javascript:alert(1)" in html  # rendered inert as escaped text

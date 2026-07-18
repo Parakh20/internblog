@@ -218,8 +218,9 @@ def push_to_all_users(db: Session, extraction: Extraction, row: Post) -> None:
     chat id) is logged and skipped - it never blocks another user's push or
     aborts the fetch cycle."""
     message = None
+    is_calendar_category = extraction.category in {c.value for c in CALENDAR_CATEGORIES}
     for user in db.query(User).all():
-        if user.calendar_sync_enabled and user.calendar_refresh_token_encrypted:
+        if is_calendar_category and user.calendar_sync_enabled and user.calendar_refresh_token_encrypted:
             try:
                 push_calendar_event_for_user(user, extraction, row)
             except Exception:
