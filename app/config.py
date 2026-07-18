@@ -74,6 +74,22 @@ class Settings(BaseSettings):
             and self.google_calendar_refresh_token
         )
 
+    # OAuth client used for both "Sign in with Google" and Calendar API
+    # access - same Cloud project as the original single-user setup, now
+    # also handling public login. Scopes requested: openid email profile
+    # https://www.googleapis.com/auth/calendar (see app/auth.py).
+    google_oauth_client_id: str = ""
+    google_oauth_client_secret: str = ""
+    # Public base URL this app is served at, e.g. https://your-host.duckdns.org
+    # - needed to build the OAuth redirect_uri without hardcoding a host.
+    oauth_redirect_base_url: str = ""
+
+    # Only this email sees /admin (the session/fetch-log/DB dashboard).
+    owner_email: str = "sharmaparakh05@gmail.com"
+
+    session_cookie_name: str = "internblog_session"
+    session_ttl_days: int = 30
+
     storage_state_path: Path = PROJECT_ROOT / "storage_state.json"
     snapshot_dir: Path = PROJECT_ROOT / "data" / "snapshots"
     log_dir: Path = PROJECT_ROOT / "logs"

@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 EVENTS_ENDPOINT = "https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
+CALENDARS_ENDPOINT = "https://www.googleapis.com/calendar/v3/calendars"
 REQUEST_TIMEOUT = 15.0
 
 
@@ -42,6 +43,22 @@ def get_access_token(client_id: str, client_secret: str, refresh_token: str) -> 
         return response.json()["access_token"]
     except httpx.HTTPError:
         logger.exception("failed to refresh google calendar access token")
+        return None
+
+
+def create_secondary_calendar(access_token: str, summary: str = "Internblog Deadlines") -> str | None:
+    """Create a dedicated secondary calendar for a newly signed-in user, so
+    their internship deadlines don't mix into their primary calendar
+    (lectures, personal events, etc). Called once, on first login."""
+    headers = {"Authorization": f"Bearer {access_token}"}
+    try:
+        response = httpx.post(
+            CALENDARS_ENDPOINT, headers=headers, json={"summary": summary}, timeout=REQUEST_TIMEOUT
+        )
+        response.raise_for_status()
+        return response.json()["id"]
+    except httpx.HTTPError:
+        logger.exception("failed to create secondary calendar %r", summary)
         return None
 
 
