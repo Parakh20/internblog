@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # unguessable since it's public (Google Calendar must be able to fetch it).
     calendar_feed_token: str = ""
 
+    # Fernet key (generate with `python3 -c "from cryptography.fernet import
+    # Fernet; print(Fernet.generate_key().decode())"`) used to encrypt each
+    # user's Google Calendar refresh token at rest.
+    secret_encryption_key: str = ""
+
     # Direct push into a personal Google Calendar via the Calendar API, so
     # deadline/test/PPT events show up on mobile too - the official Google
     # Calendar mobile app does not surface URL-subscribed ("Other calendars")
