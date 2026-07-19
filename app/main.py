@@ -4,7 +4,7 @@ import asyncio
 import logging
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
@@ -14,6 +14,7 @@ from sqlalchemy import func, select, text
 from app import auth
 from app.blog_client import BlogClient
 from app.calendar_feed import DeadlineEvent, build_ics
+from app.calendar_view import parse_week_param, render_week_view
 from app.config import settings
 from app.dashboard import render_dashboard
 from app.db import SessionLocal, init_db
@@ -33,7 +34,7 @@ from app.site import (
     render_terms_page,
 )
 from app.telegram_link import build_connect_url, generate_link_code, parse_start_command
-from app.timeutil import parse_gmt
+from app.timeutil import IST, parse_gmt, parse_ist
 
 # Sort key for "no date" extractions in the dashboard's newest-event-first
 # ordering - sorts below every real date rather than needing special-casing.
@@ -211,6 +212,43 @@ def post_detail(post_id: int, user: User = Depends(get_current_user_or_redirect)
     if post is None:
         raise HTTPException(status_code=404)
     return render_post_detail(post)
+
+
+@app.get("/calendar", response_class=HTMLResponse)
+def calendar_view(
+    week: str | None = None, user: User = Depends(get_current_user_or_redirect)
+) -> str:
+    """Week-grid view of every deadline/test/OA/PPT extraction, global
+    across all users (not scoped to the viewer's own synced events) - see
+    app/calendar_view.py. Distinct from the ICS feed at /calendar/{token}.ics,
+    which FastAPI routes separately since that path always ends in .ics."""
+    monday = parse_week_param(week)
+    week_end = monday + timedelta(days=7)
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(Extraction, Post)
+            .join(Post, Extraction.post_id == Post.id)
+            .where(Extraction.category.in_([c.value for c in CALENDAR_CATEGORIES]))
+            .where(Extraction.deadline.is_not(None))
+        ).all()
+
+    events = []
+    for extraction, post in rows:
+        dt = parse_ist(extraction.deadline)
+        if dt is None:
+            continue
+        local_date = dt.astimezone(IST).date()
+        if monday <= local_date < week_end:
+            events.append(
+                {
+                    "post_id": post.id,
+                    "category": extraction.category,
+                    "company": extraction.company,
+                    "role": extraction.role,
+                    "deadline_dt": dt,
+                }
+            )
+    return render_week_view(monday, events)
 
 
 @app.get("/google162e56c4a13e2140.html", response_class=HTMLResponse)

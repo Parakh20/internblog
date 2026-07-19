@@ -259,7 +259,7 @@ def render_calendar_view(
 <body>
 <div class="nav">
   <strong>internblog</strong>
-  <div>{escape(user.email)} {admin_link} <a href="/logout">Sign out</a></div>
+  <div><a href="/calendar">Calendar</a> {escape(user.email)} {admin_link} <a href="/logout">Sign out</a></div>
 </div>
 <div class="wrap">
   <div class="card">

@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 
 from app import auth, main
 from app.db import init_db
-from app.models import User
+from app.models import Extraction, User
 
 
 @pytest.fixture(autouse=True)
@@ -138,6 +138,42 @@ def test_allowlist_remove_rejects_owner_email(client, _fresh_db):
     _login_as(client, _fresh_db, "owner@example.com")
     response = client.post("/admin/allowlist/remove", data={"email": "owner@example.com"})
     assert response.status_code == 400
+
+
+def test_calendar_view_requires_login(client, _fresh_db):
+    response = client.get("/calendar", follow_redirects=False)
+    assert response.status_code == 303
+    assert response.headers["location"] == "/login"
+
+
+def test_calendar_view_shows_extraction_in_its_week(client, _fresh_db):
+    from app.models import Post
+
+    _login_as(client, _fresh_db, "reader@example.com")
+    db = _fresh_db()
+    post = Post(
+        wp_id=1, slug="a", title="t", link="https://blog.example.com/a",
+        date_gmt="2026-07-17T10:00:00", modified_gmt="2026-07-17T10:00:00",
+        content_hash="h", raw_html="",
+    )
+    db.add(post)
+    db.commit()
+    db.add(Extraction(
+        post_id=post.id, dedup_key="k1", company="Acme", role="SWE Intern",
+        deadline="2026-07-21T18:30:00+05:30", category="new_listing", raw_json="{}",
+    ))
+    db.commit()
+
+    response = client.get("/calendar?week=2026-07-20")
+    assert response.status_code == 200
+    assert "Acme" in response.text
+    assert "SWE Intern" in response.text
+
+
+def test_calendar_view_defaults_to_current_week_without_param(client, _fresh_db):
+    _login_as(client, _fresh_db, "reader2@example.com")
+    response = client.get("/calendar")
+    assert response.status_code == 200
 
 
 def test_settings_updates_sync_toggle(client, _fresh_db):

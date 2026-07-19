@@ -87,7 +87,11 @@ class Settings(BaseSettings):
     owner_email: str = "sharmaparakh05@gmail.com"
 
     session_cookie_name: str = "internblog_session"
-    session_ttl_days: int = 30
+    # Effectively never expires (100 years) - the user asked for sign-in to
+    # persist indefinitely rather than requiring a re-login every 30 days.
+    # Kept finite (not nullable) so the existing expires_at column/check in
+    # app/auth.py::get_session_user needs no schema change.
+    session_ttl_days: int = 36500
 
     storage_state_path: Path = PROJECT_ROOT / "storage_state.json"
     snapshot_dir: Path = PROJECT_ROOT / "data" / "snapshots"
