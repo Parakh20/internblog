@@ -341,3 +341,203 @@ def test_push_calendar_event_for_user_lazily_creates_event_calendar(db, monkeypa
 
     assert upserted == ["freshly-created-cal"]
     assert user.event_calendar_id == "freshly-created-cal"
+
+
+def test_get_or_create_deadline_calendar_creates_and_persists_on_first_call(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "create_secondary_calendar", lambda access_token, summary: "new-deadline-cal")
+
+    user = User(google_sub="ddl1", email="ddl1@example.com")
+    db.add(user)
+    db.commit()
+
+    result = pipeline.get_or_create_deadline_calendar(db, user, "access-token")
+
+    assert result == "new-deadline-cal"
+    fetched = db.query(User).filter_by(id=user.id).one()
+    assert fetched.calendar_id == "new-deadline-cal"
+
+
+def test_get_or_create_deadline_calendar_reuses_existing(db, monkeypatch):
+    monkeypatch.setattr(
+        pipeline, "create_secondary_calendar",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not create again")),
+    )
+
+    user = User(google_sub="ddl2", email="ddl2@example.com", calendar_id="existing-deadline-cal")
+    db.add(user)
+    db.commit()
+
+    assert pipeline.get_or_create_deadline_calendar(db, user, "access-token") == "existing-deadline-cal"
+
+
+def test_get_or_create_deadline_calendar_returns_none_on_creation_failure(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "create_secondary_calendar", lambda access_token, summary: None)
+
+    user = User(google_sub="ddl3", email="ddl3@example.com")
+    db.add(user)
+    db.commit()
+
+    assert pipeline.get_or_create_deadline_calendar(db, user, "access-token") is None
+
+
+def test_push_calendar_event_for_user_self_heals_deleted_deadline_calendar(db, monkeypatch):
+    """A calendar that was deleted on Google's side (or was never valid)
+    404s on the first push - the fix must clear the stale id, create a
+    fresh calendar, and retry the same event against it, instead of
+    silently failing forever like the pre-fix behavior did in production."""
+    monkeypatch.setattr(pipeline, "decrypt_token", lambda ciphertext: ciphertext)
+    monkeypatch.setattr(pipeline, "get_access_token", lambda *a: "access-token")
+    monkeypatch.setattr(pipeline, "create_secondary_calendar", lambda access_token, summary: "recreated-cal")
+
+    calls = []
+
+    def fake_upsert(access_token, calendar_id, event_id, summary, description, start_iso, end_iso):
+        calls.append(calendar_id)
+        return "calendar_missing" if calendar_id == "stale-cal" else "ok"
+
+    monkeypatch.setattr(pipeline, "upsert_event", fake_upsert)
+
+    user = User(
+        google_sub="heal1", email="heal1@example.com",
+        calendar_id="stale-cal", calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    from app.models import Post
+
+    post = Post(wp_id=20, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    extraction = Extraction(company="Acme", category="new_listing", deadline="2027-01-01T00:00:00+05:30")
+
+    pipeline.push_calendar_event_for_user(db, user, extraction, post)
+
+    assert calls == ["stale-cal", "recreated-cal"]
+    fetched = db.query(User).filter_by(id=user.id).one()
+    assert fetched.calendar_id == "recreated-cal"
+
+
+def test_push_calendar_event_for_user_self_heals_deleted_event_calendar(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "decrypt_token", lambda ciphertext: ciphertext)
+    monkeypatch.setattr(pipeline, "get_access_token", lambda *a: "access-token")
+    monkeypatch.setattr(pipeline, "create_secondary_calendar", lambda access_token, summary: "recreated-evt-cal")
+
+    calls = []
+
+    def fake_upsert(access_token, calendar_id, event_id, summary, description, start_iso, end_iso):
+        calls.append(calendar_id)
+        return "calendar_missing" if calendar_id == "stale-evt-cal" else "ok"
+
+    monkeypatch.setattr(pipeline, "upsert_event", fake_upsert)
+
+    user = User(
+        google_sub="heal2", email="heal2@example.com",
+        event_calendar_id="stale-evt-cal", calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    from app.models import Post
+
+    post = Post(wp_id=21, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    extraction = Extraction(company="Acme", category="test_update", deadline="2027-01-01T00:00:00+05:30")
+
+    pipeline.push_calendar_event_for_user(db, user, extraction, post)
+
+    assert calls == ["stale-evt-cal", "recreated-evt-cal"]
+    fetched = db.query(User).filter_by(id=user.id).one()
+    assert fetched.event_calendar_id == "recreated-evt-cal"
+
+
+def test_push_calendar_event_for_user_gives_event_category_a_default_duration_when_none_stated(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "decrypt_token", lambda ciphertext: ciphertext)
+    monkeypatch.setattr(pipeline, "get_access_token", lambda *a: "access-token")
+    ends = []
+    monkeypatch.setattr(
+        pipeline, "upsert_event",
+        lambda access_token, calendar_id, event_id, summary, description, start_iso, end_iso: (
+            ends.append(end_iso) or "ok"
+        ),
+    )
+
+    user = User(
+        google_sub="dur1", email="dur1@example.com",
+        event_calendar_id="events-cal", calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    from app.models import Post
+
+    post = Post(wp_id=22, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    extraction = Extraction(
+        company="Acme", category="test_update",
+        deadline="2027-01-01T10:00:00+05:30", deadline_end=None,
+    )
+
+    pipeline.push_calendar_event_for_user(db, user, extraction, post)
+
+    assert ends == ["2027-01-01T11:00:00+05:30"]
+
+
+def test_push_calendar_event_for_user_keeps_stated_duration_for_event_category(db, monkeypatch):
+    monkeypatch.setattr(pipeline, "decrypt_token", lambda ciphertext: ciphertext)
+    monkeypatch.setattr(pipeline, "get_access_token", lambda *a: "access-token")
+    ends = []
+    monkeypatch.setattr(
+        pipeline, "upsert_event",
+        lambda access_token, calendar_id, event_id, summary, description, start_iso, end_iso: (
+            ends.append(end_iso) or "ok"
+        ),
+    )
+
+    user = User(
+        google_sub="dur2", email="dur2@example.com",
+        event_calendar_id="events-cal", calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    from app.models import Post
+
+    post = Post(wp_id=23, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    extraction = Extraction(
+        company="Acme", category="test_update",
+        deadline="2027-01-01T10:00:00+05:30", deadline_end="2027-01-01T12:00:00+05:30",
+    )
+
+    pipeline.push_calendar_event_for_user(db, user, extraction, post)
+
+    assert ends == ["2027-01-01T12:00:00+05:30"]
+
+
+def test_push_calendar_event_for_user_leaves_deadline_category_as_point_in_time(db, monkeypatch):
+    # Deadlines are genuinely instantaneous - no default duration should be
+    # applied, unlike test/OA/PPT events.
+    monkeypatch.setattr(pipeline, "decrypt_token", lambda ciphertext: ciphertext)
+    monkeypatch.setattr(pipeline, "get_access_token", lambda *a: "access-token")
+    ends = []
+    monkeypatch.setattr(
+        pipeline, "upsert_event",
+        lambda access_token, calendar_id, event_id, summary, description, start_iso, end_iso: (
+            ends.append(end_iso) or "ok"
+        ),
+    )
+
+    user = User(
+        google_sub="dur3", email="dur3@example.com",
+        calendar_id="deadline-cal", calendar_refresh_token_encrypted="ct",
+    )
+    db.add(user)
+    db.commit()
+
+    from app.models import Post
+
+    post = Post(wp_id=24, slug="a", title="t", link="l", date_gmt="2026-01-01T00:00:00", modified_gmt="2026-01-01T00:00:00", content_hash="h", raw_html="")
+    extraction = Extraction(
+        company="Acme", category="new_listing",
+        deadline="2027-01-01T23:59:00+05:30", deadline_end=None,
+    )
+
+    pipeline.push_calendar_event_for_user(db, user, extraction, post)
+
+    assert ends == [None]

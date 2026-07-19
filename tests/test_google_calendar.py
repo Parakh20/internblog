@@ -50,7 +50,7 @@ def test_unparseable_datetime_returns_none():
 
 import httpx
 
-from app.google_calendar import create_secondary_calendar
+from app.google_calendar import create_secondary_calendar, upsert_event
 
 
 def test_create_secondary_calendar_returns_new_calendar_id(monkeypatch):
@@ -71,3 +71,65 @@ def test_create_secondary_calendar_returns_none_on_error(monkeypatch):
 
     monkeypatch.setattr(httpx, "post", fake_post)
     assert create_secondary_calendar("access-token") is None
+
+
+def _upsert(**overrides):
+    kwargs = dict(
+        access_token="access-token", calendar_id="cal-1", event_id="evt1",
+        summary="s", description="d", start_iso="2026-07-20T10:00:00+05:30", end_iso=None,
+    )
+    kwargs.update(overrides)
+    return upsert_event(**kwargs)
+
+
+def test_upsert_event_returns_ok_on_success(monkeypatch):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        request = httpx.Request("POST", url, headers=headers, json=json)
+        return httpx.Response(200, json={"id": "evt1"}, request=request)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    assert _upsert() == "ok"
+
+
+def test_upsert_event_returns_calendar_missing_on_404(monkeypatch):
+    # A deleted or never-created calendar 404s on the very POST that would
+    # create the event - the caller uses this signal to clear the stale
+    # stored calendar id and get a fresh one, rather than failing forever.
+    def fake_post(url, headers=None, json=None, timeout=None):
+        request = httpx.Request("POST", url, headers=headers, json=json)
+        return httpx.Response(404, json={"error": "not found"}, request=request)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    assert _upsert(calendar_id="deleted-cal") == "calendar_missing"
+
+
+def test_upsert_event_returns_error_on_other_failure(monkeypatch):
+    def fake_post(url, headers=None, json=None, timeout=None):
+        request = httpx.Request("POST", url, headers=headers, json=json)
+        return httpx.Response(500, json={"error": "boom"}, request=request)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    assert _upsert() == "error"
+
+
+def test_upsert_event_returns_error_for_unparseable_start():
+    assert _upsert(start_iso="not a date") == "error"
+
+
+def test_upsert_event_retries_as_put_on_409_conflict(monkeypatch):
+    calls = []
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        calls.append("POST")
+        request = httpx.Request("POST", url, headers=headers, json=json)
+        return httpx.Response(409, json={"error": "conflict"}, request=request)
+
+    def fake_put(url, headers=None, json=None, timeout=None):
+        calls.append("PUT")
+        request = httpx.Request("PUT", url, headers=headers, json=json)
+        return httpx.Response(200, json={"id": "evt1"}, request=request)
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx, "put", fake_put)
+    assert _upsert() == "ok"
+    assert calls == ["POST", "PUT"]

@@ -96,14 +96,20 @@ def upsert_event(
     description: str,
     start_iso: str,
     end_iso: str | None,
-) -> bool:
+) -> str:
     """Create or update a calendar event, keyed by a stable client-chosen ID
     so re-running extraction on the same post is idempotent rather than
-    creating duplicate events."""
+    creating duplicate events.
+
+    Returns "ok" on success, "calendar_missing" if calendar_id itself
+    doesn't exist (deleted after creation, or a stale/invalid id) - the
+    caller should clear its stored calendar id and retry against a freshly
+    created one, rather than silently failing every push forever - or
+    "error" for any other failure."""
     start_rfc3339 = _to_rfc3339(start_iso)
     if start_rfc3339 is None:
         logger.warning("unparseable start time %r for event %s, skipping calendar push", start_iso, event_id)
-        return False
+        return "error"
     end_rfc3339 = _to_rfc3339(end_iso) if end_iso else start_rfc3339
 
     body = {
@@ -119,8 +125,11 @@ def upsert_event(
         response = httpx.post(base_url, headers=headers, json=body, timeout=REQUEST_TIMEOUT)
         if response.status_code == 409:
             response = httpx.put(f"{base_url}/{event_id}", headers=headers, json=body, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 404:
+            logger.warning("calendar %s not found (deleted or invalid), signaling for recreation", calendar_id)
+            return "calendar_missing"
         response.raise_for_status()
-        return True
+        return "ok"
     except httpx.HTTPError:
         logger.exception("failed to upsert google calendar event %s", event_id)
-        return False
+        return "error"

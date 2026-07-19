@@ -7,7 +7,7 @@ endpoint and logs always reflect reality.
 import json
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,13 @@ logger = logging.getLogger(__name__)
 
 REFRESH_COOLDOWN_SECONDS = 90
 _last_refresh_attempt = 0.0
+
+# Applied to test/OA/PPT posts that state only a start time (no explicit
+# range) - without this, upsert_event's start==end fallback renders as an
+# invisible zero-width sliver on the calendar. Deadlines stay point-in-time
+# on purpose (a deadline genuinely isn't a duration), so this only applies
+# to EVENT_CALENDAR_CATEGORIES - see push_calendar_event_for_user.
+DEFAULT_EVENT_DURATION_MINUTES = 60
 
 
 def _is_upcoming(iso_value: str) -> bool:
@@ -209,6 +216,33 @@ def get_or_create_event_calendar(db: Session, user: User, access_token: str) -> 
     return calendar_id
 
 
+def get_or_create_deadline_calendar(db: Session, user: User, access_token: str) -> str | None:
+    """Same lazy-creation pattern as get_or_create_event_calendar, for the
+    "Internblog Deadlines" calendar. Unlike the original signup-time-only
+    creation in app/auth.py::upsert_user_from_google (a one-shot attempt
+    with no retry), this is called on every push - so a user whose first
+    creation attempt failed (seen in production: a 403 that left calendar_id
+    permanently null) gets it retried on their next deadline post instead
+    of being silently stuck with no calendar sync forever."""
+    if user.calendar_id:
+        return user.calendar_id
+    calendar_id = create_secondary_calendar(access_token, "Internblog Deadlines")
+    if calendar_id is None:
+        return None
+    user.calendar_id = calendar_id
+    db.commit()
+    return calendar_id
+
+
+def _effective_end_iso(category: str, deadline: str | None, deadline_end: str | None) -> str | None:
+    if deadline_end is not None or category not in {c.value for c in EVENT_CALENDAR_CATEGORIES}:
+        return deadline_end
+    start = parse_ist(deadline)
+    if start is None:
+        return None
+    return (start + timedelta(minutes=DEFAULT_EVENT_DURATION_MINUTES)).isoformat()
+
+
 def push_calendar_event_for_user(db: Session, user: User, extraction: Extraction, row: Post) -> None:
     refresh_token = decrypt_token(user.calendar_refresh_token_encrypted)
     access_token = get_access_token(
@@ -216,14 +250,18 @@ def push_calendar_event_for_user(db: Session, user: User, extraction: Extraction
     )
     if access_token is None:
         return
-    if extraction.category in {c.value for c in DEADLINE_CALENDAR_CATEGORIES}:
-        calendar_id = user.calendar_id
-    elif extraction.category in {c.value for c in EVENT_CALENDAR_CATEGORIES}:
+
+    is_deadline = extraction.category in {c.value for c in DEADLINE_CALENDAR_CATEGORIES}
+    is_event = extraction.category in {c.value for c in EVENT_CALENDAR_CATEGORIES}
+    if is_deadline:
+        calendar_id = get_or_create_deadline_calendar(db, user, access_token)
+    elif is_event:
         calendar_id = get_or_create_event_calendar(db, user, access_token)
     else:
         return
     if calendar_id is None:
         return
+
     summary = f"{extraction.company or 'Unknown company'}" + (f" - {extraction.role}" if extraction.role else "")
     group = CALENDAR_EVENT_GROUP.get(PostCategory(extraction.category))
     event_id = (
@@ -231,10 +269,33 @@ def push_calendar_event_for_user(db: Session, user: User, extraction: Extraction
         if extraction.company and group
         else event_id_for(extraction.id)
     )
-    upsert_event(
+    end_iso = _effective_end_iso(extraction.category, extraction.deadline, extraction.deadline_end)
+
+    result = upsert_event(
         access_token, calendar_id, event_id,
         summary=summary, description=row.link,
-        start_iso=extraction.deadline, end_iso=extraction.deadline_end,
+        start_iso=extraction.deadline, end_iso=end_iso,
+    )
+    if result != "calendar_missing":
+        return
+
+    # The stored calendar id is stale (deleted on Google's side, or was
+    # never valid) - clear it and retry once against a freshly created
+    # calendar, instead of failing this and every future push silently.
+    if is_deadline:
+        user.calendar_id = None
+        db.commit()
+        new_calendar_id = get_or_create_deadline_calendar(db, user, access_token)
+    else:
+        user.event_calendar_id = None
+        db.commit()
+        new_calendar_id = get_or_create_event_calendar(db, user, access_token)
+    if new_calendar_id is None:
+        return
+    upsert_event(
+        access_token, new_calendar_id, event_id,
+        summary=summary, description=row.link,
+        start_iso=extraction.deadline, end_iso=end_iso,
     )
 
 
