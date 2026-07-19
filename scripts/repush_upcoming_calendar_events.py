@@ -10,6 +10,7 @@ Usage: python scripts/repush_upcoming_calendar_events.py
 
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -17,6 +18,12 @@ from app.db import SessionLocal, init_db
 from app.extraction import CALENDAR_CATEGORIES
 from app.models import Extraction, Post, User
 from app.pipeline import _is_upcoming, push_calendar_event_for_user
+
+# Spread out calls so a burst of calendar-creation retries (self-healing a
+# stale calendar for several extractions in a row) doesn't trip Google's
+# short-window rate limit on calendar creation - normal app operation never
+# fires this many calendar calls back-to-back, only this one-off backfill does.
+DELAY_SECONDS_BETWEEN_PUSHES = 1.5
 
 
 def main() -> None:
@@ -39,6 +46,7 @@ def main() -> None:
                     push_calendar_event_for_user(db, user, extraction, post)
                 except Exception as e:
                     print(f"  failed: user={user.email} extraction={extraction.id} ({extraction.company}): {e}")
+                time.sleep(DELAY_SECONDS_BETWEEN_PUSHES)
         print("Done.")
 
 
