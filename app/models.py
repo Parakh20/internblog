@@ -107,6 +107,20 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AllowedEmail(Base):
+    """Admin-managed sign-in allowlist (placement office policy requires the
+    app stay restricted to a small explicit group rather than being
+    publicly signupable). Checked at /auth/callback before a User row is
+    ever created - see app/auth.py::is_email_allowed. Managed from /admin,
+    not .env, so add/remove takes effect immediately without a redeploy."""
+
+    __tablename__ = "allowed_emails"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Session(Base):
     """Server-side session, looked up by the opaque token stored in the
     session cookie. Revocable (unlike a JWT) - logging out deletes the row,

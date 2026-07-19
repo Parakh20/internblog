@@ -44,6 +44,12 @@ def test_callback_rejects_mismatched_state(client):
 
 
 def test_callback_creates_session_and_redirects_home(client, monkeypatch):
+    from app.models import AllowedEmail
+
+    db = main.SessionLocal()
+    db.add(AllowedEmail(email="x@example.com"))
+    db.commit()
+
     monkeypatch.setattr(auth, "exchange_code_for_tokens", lambda code: {
         "google_sub": "sub-x", "email": "x@example.com", "name": "X",
         "picture": None, "refresh_token": "rt", "access_token": "at",
@@ -60,7 +66,50 @@ def test_callback_creates_session_and_redirects_home(client, monkeypatch):
     assert main.settings.session_cookie_name in response.cookies
 
 
+def test_callback_rejects_email_not_on_allowlist(client, monkeypatch):
+    monkeypatch.setattr(auth, "exchange_code_for_tokens", lambda code: {
+        "google_sub": "sub-z", "email": "not-allowed@example.com", "name": "Z",
+        "picture": None, "refresh_token": "rt", "access_token": "at",
+    })
+
+    response = client.get(
+        "/auth/callback?code=abc&state=expected",
+        cookies={"internblog_oauth_state": "expected"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 403
+    assert main.settings.session_cookie_name not in response.cookies
+
+    from app.models import User
+
+    db = main.SessionLocal()
+    assert db.query(User).filter_by(email="not-allowed@example.com").one_or_none() is None
+
+
+def test_callback_allows_owner_even_when_allowlist_table_is_empty(client, monkeypatch):
+    monkeypatch.setattr(main.settings, "owner_email", "owner@example.com")
+    monkeypatch.setattr(auth, "exchange_code_for_tokens", lambda code: {
+        "google_sub": "sub-owner", "email": "owner@example.com", "name": "Owner",
+        "picture": None, "refresh_token": "rt", "access_token": "at",
+    })
+    monkeypatch.setattr(auth, "create_secondary_calendar", lambda access_token: "cal-owner")
+
+    response = client.get(
+        "/auth/callback?code=abc&state=expected",
+        cookies={"internblog_oauth_state": "expected"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 307
+    assert main.settings.session_cookie_name in response.cookies
+
+
 def test_logout_clears_session(client, monkeypatch):
+    from app.models import AllowedEmail
+
+    db = main.SessionLocal()
+    db.add(AllowedEmail(email="y@example.com"))
+    db.commit()
+
     monkeypatch.setattr(auth, "exchange_code_for_tokens", lambda code: {
         "google_sub": "sub-y", "email": "y@example.com", "name": "Y",
         "picture": None, "refresh_token": "rt", "access_token": "at",

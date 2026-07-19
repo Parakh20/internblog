@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session as DBSession
 from app.config import settings
 from app.crypto import encrypt_token
 from app.google_calendar import create_secondary_calendar
-from app.models import Session as SessionRow, User
+from app.models import AllowedEmail, Session as SessionRow, User
 
 logger = logging.getLogger(__name__)
 
@@ -132,3 +132,13 @@ def delete_session(db: DBSession, session_id: str | None) -> None:
 
 def is_admin(user: User) -> bool:
     return user.email == settings.owner_email
+
+
+def is_email_allowed(db: DBSession, email: str) -> bool:
+    """Gate on the admin-managed AllowedEmail table, checked before a User
+    row is ever created for a new sign-in. The owner is always allowed,
+    regardless of table contents, so they can never lock themselves out."""
+    email = email.lower()
+    if email == settings.owner_email.lower():
+        return True
+    return db.query(AllowedEmail).filter_by(email=email).one_or_none() is not None

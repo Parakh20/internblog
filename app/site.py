@@ -66,6 +66,22 @@ def render_homepage() -> str:
 </body></html>"""
 
 
+def render_access_denied_page() -> str:
+    return f"""<!doctype html>
+<html><head><meta charset="utf-8"><title>Access restricted - internblog</title><style>{_STYLE}</style></head>
+<body>
+<div class="login-wrap"><div class="login-card">
+  <h1>internblog</h1>
+  <p>internblog is currently limited to a small group of testers while it's
+  reviewed against placement office policy. Your Google account isn't on
+  that list.</p>
+  <p style="margin-top:2rem;font-size:0.8rem;color:#999">
+    Think this is a mistake? Contact sharmaparakh05@gmail.com.
+  </p>
+</div></div>
+</body></html>"""
+
+
 def render_login_page() -> str:
     return f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>internblog</title><style>{_STYLE}</style></head>

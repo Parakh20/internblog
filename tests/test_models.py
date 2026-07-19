@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.models import Base, Session as SessionRow, User
+from app.models import AllowedEmail, Base, Session as SessionRow, User
 
 
 def _db():
@@ -81,3 +81,25 @@ def test_user_event_calendar_id_defaults_to_none():
 
     fetched = db.query(User).filter_by(google_sub="sub-noevt").one()
     assert fetched.event_calendar_id is None
+
+
+def test_allowed_email_round_trips():
+    db = _db()
+    db.add(AllowedEmail(email="allowed@example.com"))
+    db.commit()
+
+    fetched = db.query(AllowedEmail).filter_by(email="allowed@example.com").one()
+    assert fetched.email == "allowed@example.com"
+    assert fetched.created_at is not None
+
+
+def test_allowed_email_is_unique():
+    db = _db()
+    db.add(AllowedEmail(email="dup@example.com"))
+    db.commit()
+    db.add(AllowedEmail(email="dup@example.com"))
+    import pytest
+    from sqlalchemy.exc import IntegrityError
+
+    with pytest.raises(IntegrityError):
+        db.commit()

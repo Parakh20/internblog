@@ -86,6 +86,60 @@ def test_admin_dashboard_lists_registered_users(client, _fresh_db):
     assert "Listed User" in response.text
 
 
+def test_admin_dashboard_lists_invited_but_not_yet_joined_email(client, _fresh_db):
+    from app.models import AllowedEmail
+
+    _login_as(client, _fresh_db, "owner@example.com")
+    db = _fresh_db()
+    db.add(AllowedEmail(email="invited@example.com"))
+    db.commit()
+
+    response = client.get("/admin")
+    assert response.status_code == 200
+    assert "invited@example.com" in response.text
+    assert "Invited" in response.text
+
+
+def test_allowlist_add_requires_admin(client, _fresh_db):
+    _login_as(client, _fresh_db, "not-owner@example.com")
+    response = client.post("/admin/allowlist/add", data={"email": "new@example.com"})
+    assert response.status_code == 404
+
+
+def test_allowlist_add_creates_entry(client, _fresh_db):
+    from app.models import AllowedEmail
+
+    _login_as(client, _fresh_db, "owner@example.com")
+    response = client.post("/admin/allowlist/add", data={"email": "New@Example.com"}, follow_redirects=False)
+    assert response.status_code == 303
+
+    db = _fresh_db()
+    assert db.query(AllowedEmail).filter_by(email="new@example.com").one_or_none() is not None
+
+
+def test_allowlist_remove_deletes_entry_and_existing_account(client, _fresh_db):
+    from app.models import AllowedEmail
+
+    _login_as(client, _fresh_db, "owner@example.com")
+    db = _fresh_db()
+    db.add(AllowedEmail(email="gone@example.com"))
+    db.add(User(google_sub="gone-sub", email="gone@example.com"))
+    db.commit()
+
+    response = client.post("/admin/allowlist/remove", data={"email": "gone@example.com"}, follow_redirects=False)
+    assert response.status_code == 303
+
+    db2 = _fresh_db()
+    assert db2.query(AllowedEmail).filter_by(email="gone@example.com").one_or_none() is None
+    assert db2.query(User).filter_by(email="gone@example.com").one_or_none() is None
+
+
+def test_allowlist_remove_rejects_owner_email(client, _fresh_db):
+    _login_as(client, _fresh_db, "owner@example.com")
+    response = client.post("/admin/allowlist/remove", data={"email": "owner@example.com"})
+    assert response.status_code == 400
+
+
 def test_settings_updates_sync_toggle(client, _fresh_db):
     _login_as(client, _fresh_db, "user2@example.com")
     response = client.post("/settings", data={}, follow_redirects=False)

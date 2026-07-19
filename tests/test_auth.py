@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app import auth
 from app.config import settings
-from app.models import Base, Session as SessionRow, User
+from app.models import AllowedEmail, Base, Session as SessionRow, User
 
 
 @pytest.fixture
@@ -128,3 +128,27 @@ def test_is_admin_matches_owner_email_only(monkeypatch):
     monkeypatch.setattr(settings, "owner_email", "owner@example.com")
     assert auth.is_admin(User(email="owner@example.com"))
     assert not auth.is_admin(User(email="someone-else@example.com"))
+
+
+def test_is_email_allowed_owner_always_allowed_regardless_of_table(db, monkeypatch):
+    monkeypatch.setattr(settings, "owner_email", "owner@example.com")
+    assert auth.is_email_allowed(db, "owner@example.com")
+
+
+def test_is_email_allowed_matches_allowlist_case_insensitively(db, monkeypatch):
+    monkeypatch.setattr(settings, "owner_email", "owner@example.com")
+    db.add(AllowedEmail(email="someone@example.com"))
+    db.commit()
+    assert auth.is_email_allowed(db, "Someone@Example.com")
+
+
+def test_is_email_allowed_rejects_email_not_on_allowlist(db, monkeypatch):
+    monkeypatch.setattr(settings, "owner_email", "owner@example.com")
+    db.add(AllowedEmail(email="someone@example.com"))
+    db.commit()
+    assert not auth.is_email_allowed(db, "stranger@example.com")
+
+
+def test_is_email_allowed_rejects_everyone_when_table_empty_except_owner(db, monkeypatch):
+    monkeypatch.setattr(settings, "owner_email", "owner@example.com")
+    assert not auth.is_email_allowed(db, "anyone@example.com")

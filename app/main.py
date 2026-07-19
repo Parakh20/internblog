@@ -19,11 +19,19 @@ from app.dashboard import render_dashboard
 from app.db import SessionLocal, init_db
 from app.extraction import CALENDAR_CATEGORIES
 from app.logging_setup import setup_logging
-from app.models import Extraction, FetchLog, Post, User
+from app.models import AllowedEmail, Extraction, FetchLog, Post, User
 from app.notifications import send_telegram_message
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
-from app.site import render_calendar_view, render_homepage, render_login_page, render_post_detail, render_privacy_page, render_terms_page
+from app.site import (
+    render_access_denied_page,
+    render_calendar_view,
+    render_homepage,
+    render_login_page,
+    render_post_detail,
+    render_privacy_page,
+    render_terms_page,
+)
 from app.telegram_link import build_connect_url, generate_link_code, parse_start_command
 from app.timeutil import parse_gmt
 
@@ -107,6 +115,11 @@ def auth_callback(request: Request, code: str, state: str) -> Response:
 
     profile = auth.exchange_code_for_tokens(code)
     with SessionLocal() as db:
+        if not auth.is_email_allowed(db, profile["email"]):
+            response = HTMLResponse(render_access_denied_page(), status_code=403)
+            response.delete_cookie(OAUTH_STATE_COOKIE)
+            return response
+
         user = auth.upsert_user_from_google(db, profile)
         session_id = auth.create_session(db, user.id)
 
@@ -342,6 +355,8 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
     with SessionLocal() as db:
         total_extractions = db.scalar(select(func.count(Extraction.id))) or 0
 
+        db_users = db.query(User).all()
+        joined_emails = {u.email.lower() for u in db_users}
         users = [
             {
                 "email": u.email,
@@ -351,9 +366,26 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
                 "has_calendar": u.calendar_id is not None,
                 "has_event_calendar": u.event_calendar_id is not None,
                 "telegram_connected": u.telegram_chat_id is not None,
+                "status": "Joined",
             }
-            for u in db.query(User).all()
+            for u in db_users
         ]
+        # Allowlisted emails that haven't signed in yet - shown so an admin
+        # sees an add take effect immediately, not just once someone signs in.
+        users.extend(
+            {
+                "email": a.email,
+                "name": None,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
+                "calendar_sync_enabled": False,
+                "has_calendar": False,
+                "has_event_calendar": False,
+                "telegram_connected": False,
+                "status": "Invited",
+            }
+            for a in db.query(AllowedEmail).all()
+            if a.email.lower() not in joined_emails
+        )
 
         calendar_rows = db.execute(
             select(Extraction, Post)
@@ -399,7 +431,55 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
             key=lambda r: parse_gmt(r["posted_at"]) or _EPOCH,
             reverse=True,
         )
-    return render_dashboard(status, upcoming, recent, total_extractions, users)
+    return render_dashboard(status, upcoming, recent, total_extractions, users, settings.owner_email)
+
+
+@app.post("/admin/allowlist/add")
+def admin_allowlist_add(
+    user: User = Depends(get_current_user_or_redirect),
+    email: str = Form(...),
+) -> Response:
+    if not auth.is_admin(user):
+        raise HTTPException(status_code=404)
+    email = email.strip().lower()
+    with SessionLocal() as db:
+        if email and db.query(AllowedEmail).filter_by(email=email).one_or_none() is None:
+            db.add(AllowedEmail(email=email))
+            db.commit()
+    return RedirectResponse("/admin", status_code=303)
+
+
+@app.post("/admin/allowlist/remove")
+def admin_allowlist_remove(
+    user: User = Depends(get_current_user_or_redirect),
+    email: str = Form(...),
+) -> Response:
+    """Removing an email deletes both the allowlist entry and any existing
+    account for it (Session/TelegramNotification rows too), so access is
+    revoked immediately rather than only for future sign-in attempts. The
+    owner can't be removed via this route - is_email_allowed always lets
+    them through regardless of the table, so removing them here would only
+    delete their account without actually blocking them."""
+    if not auth.is_admin(user):
+        raise HTTPException(status_code=404)
+    email = email.strip().lower()
+    if email == settings.owner_email.lower():
+        raise HTTPException(status_code=400, detail="cannot remove the owner")
+
+    with SessionLocal() as db:
+        db.query(AllowedEmail).filter(func.lower(AllowedEmail.email) == email).delete(synchronize_session=False)
+        existing = db.query(User).filter(func.lower(User.email) == email).one_or_none()
+        if existing is not None:
+            from app.models import Session as SessionRow
+            from app.models import TelegramNotification
+
+            db.query(SessionRow).filter_by(user_id=existing.id).delete()
+            db.query(TelegramNotification).filter(
+                TelegramNotification.group_key.like(f"{existing.id}|%")
+            ).delete(synchronize_session=False)
+            db.delete(existing)
+        db.commit()
+    return RedirectResponse("/admin", status_code=303)
 
 
 @app.post("/cycle")

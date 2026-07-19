@@ -1,4 +1,4 @@
-from app.dashboard import _extraction_row, _fmt_ts
+from app.dashboard import _extraction_row, _fmt_ts, _user_row
 
 
 def _row(**overrides):
@@ -27,3 +27,29 @@ def test_fmt_ts_converts_utc_to_ist():
 
 def test_fmt_ts_returns_dash_for_missing_value():
     assert _fmt_ts(None) == "-"
+
+
+def _user(**overrides):
+    defaults = dict(
+        email="member@example.com", name="Member", status="Joined", created_at=None,
+        calendar_sync_enabled=False, has_calendar=False, has_event_calendar=False,
+        telegram_connected=False,
+    )
+    defaults.update(overrides)
+    return defaults
+
+
+def test_user_row_shows_remove_button_for_non_owner():
+    html = _user_row(_user(email="member@example.com"), owner_email="owner@example.com")
+    assert 'action="/admin/allowlist/remove"' in html
+    assert 'value="member@example.com"' in html
+
+
+def test_user_row_hides_remove_button_for_owner():
+    html = _user_row(_user(email="owner@example.com"), owner_email="owner@example.com")
+    assert 'action="/admin/allowlist/remove"' not in html
+
+
+def test_user_row_shows_invited_status():
+    html = _user_row(_user(status="Invited"), owner_email="owner@example.com")
+    assert "Invited" in html

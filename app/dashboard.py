@@ -74,22 +74,41 @@ def _extraction_row(r: dict, show_posted: bool = False) -> str:
     )
 
 
-def _user_row(u: dict) -> str:
+def _user_row(u: dict, owner_email: str) -> str:
+    is_owner = u["email"].lower() == owner_email.lower()
+    remove_control = (
+        "-"
+        if is_owner
+        else (
+            f'<form method="post" action="/admin/allowlist/remove" style="display:inline"'
+            f' onsubmit="return confirm(\'Remove {escape(u["email"])}? This deletes their account too.\')">'
+            f'<input type="hidden" name="email" value="{escape(u["email"])}">'
+            f'<button type="submit">Remove</button>'
+            f"</form>"
+        )
+    )
     return (
         f"<tr>"
         f"<td>{escape(u['email'])}</td>"
         f"<td>{escape(u['name'] or '-')}</td>"
+        f"<td>{escape(u['status'])}</td>"
         f"<td>{escape(_fmt_ts(u['created_at']))}</td>"
         f"<td>{'Yes' if u['calendar_sync_enabled'] else 'No'}</td>"
         f"<td>{'Yes' if u['has_calendar'] else 'No'}</td>"
         f"<td>{'Yes' if u['has_event_calendar'] else 'No'}</td>"
         f"<td>{'Yes' if u['telegram_connected'] else 'No'}</td>"
+        f"<td>{remove_control}</td>"
         f"</tr>"
     )
 
 
 def render_dashboard(
-    status: dict, upcoming: list[dict], recent: list[dict], total_extractions: int, users: list[dict]
+    status: dict,
+    upcoming: list[dict],
+    recent: list[dict],
+    total_extractions: int,
+    users: list[dict],
+    owner_email: str,
 ) -> str:
     session = status.get("session") or {}
     last_fetch = status.get("last_fetch") or {}
@@ -101,8 +120,8 @@ def render_dashboard(
     recent_rows = "\n".join(_extraction_row(r, show_posted=True) for r in recent) or (
         '<tr><td colspan="6" style="text-align:center;color:#666">No extractions yet</td></tr>'
     )
-    user_rows = "\n".join(_user_row(u) for u in users) or (
-        '<tr><td colspan="7" style="text-align:center;color:#666">No registered users</td></tr>'
+    user_rows = "\n".join(_user_row(u, owner_email) for u in users) or (
+        '<tr><td colspan="9" style="text-align:center;color:#666">No registered users</td></tr>'
     )
 
     return f"""<!doctype html>
@@ -165,9 +184,13 @@ def render_dashboard(
 </div>
 
 <h2>Registered users <span class="count">({len(users)})</span></h2>
+<form method="post" action="/admin/allowlist/add" style="margin-bottom:0.75rem">
+  <input type="text" name="email" placeholder="email@example.com" required>
+  <button type="submit">Add to allowlist</button>
+</form>
 <div class="scroll">
 <table>
-<thead><tr><th>Email</th><th>Name</th><th>Joined</th><th>Sync</th><th>Deadlines cal</th><th>Events cal</th><th>Telegram</th></tr></thead>
+<thead><tr><th>Email</th><th>Name</th><th>Status</th><th>Joined</th><th>Sync</th><th>Deadlines cal</th><th>Events cal</th><th>Telegram</th><th></th></tr></thead>
 <tbody>
 {user_rows}
 </tbody>
