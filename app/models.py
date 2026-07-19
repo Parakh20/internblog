@@ -121,6 +121,21 @@ class AllowedEmail(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class AuditLog(Base):
+    """Record of admin-initiated actions (allowlist add/remove, manual
+    cycle trigger), shown on /admin - see app/audit.py::record. Distinct
+    from the application log file (app/logging_setup.py), which captures
+    everything the app does, not just deliberate admin actions."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    actor_email: Mapped[str] = mapped_column(String(255))
+    action: Mapped[str] = mapped_column(String(64))
+    detail: Mapped[str] = mapped_column(Text, default="")
+
+
 class Session(Base):
     """Server-side session, looked up by the opaque token stored in the
     session cookie. Revocable (unlike a JWT) - logging out deletes the row,

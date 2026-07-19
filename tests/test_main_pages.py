@@ -117,6 +117,23 @@ def test_allowlist_add_creates_entry(client, _fresh_db):
     assert db.query(AllowedEmail).filter_by(email="new@example.com").one_or_none() is not None
 
 
+def test_allowlist_add_is_recorded_in_audit_log(client, _fresh_db):
+    from app.models import AuditLog
+
+    _login_as(client, _fresh_db, "owner@example.com")
+    client.post("/admin/allowlist/add", data={"email": "new@example.com"})
+
+    db = _fresh_db()
+    entry = db.query(AuditLog).one()
+    assert entry.actor_email == "owner@example.com"
+    assert entry.action == "allowlist_add"
+    assert entry.detail == "new@example.com"
+
+    response = client.get("/admin")
+    assert "allowlist_add" in response.text
+    assert "new@example.com" in response.text
+
+
 def test_allowlist_remove_deletes_entry_and_existing_account(client, _fresh_db):
     from app.models import AllowedEmail
 

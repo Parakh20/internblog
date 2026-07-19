@@ -44,3 +44,27 @@ def setup_logging(log_dir: Path, level: int = logging.INFO) -> None:
 def log_event(logger: logging.Logger, message: str, **fields) -> None:
     """Log with structured extra fields that land in the JSON lines file."""
     logger.info(message, extra={"extra_fields": fields})
+
+
+def read_recent_log_lines(log_path: Path, limit: int = 200) -> list[dict]:
+    """Reads the last `limit` entries from the JSON-lines log file, newest
+    first, for display on /admin. Only reads the active file, not rotated
+    backups (internblog.jsonl.1, .2, ...) - "recent" activity doesn't need
+    them, and reading just the live file keeps this cheap on every /admin
+    load. Lines that fail to parse (e.g. a write caught mid-flush) are
+    skipped rather than raising, so one bad line doesn't blank the page."""
+    if not log_path.exists():
+        return []
+    with log_path.open(encoding="utf-8") as f:
+        lines = f.readlines()
+    entries = []
+    for line in lines[-limit:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    entries.reverse()
+    return entries

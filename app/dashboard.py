@@ -102,6 +102,41 @@ def _user_row(u: dict, owner_email: str) -> str:
     )
 
 
+def _audit_row(a: dict) -> str:
+    return (
+        f"<tr>"
+        f"<td>{escape(_fmt_ts(a['ts']))}</td>"
+        f"<td>{escape(a['actor_email'])}</td>"
+        f"<td>{escape(a['action'])}</td>"
+        f"<td>{escape(a['detail'] or '-')}</td>"
+        f"</tr>"
+    )
+
+
+_LOG_LEVEL_COLORS = {"ERROR": "#cf222e", "WARNING": "#9a6700", "INFO": "#1a1a1a", "DEBUG": "#666"}
+
+
+def _log_line(entry: dict) -> str:
+    level = entry.get("level", "INFO")
+    color = _LOG_LEVEL_COLORS.get(level, "#1a1a1a")
+    exception = entry.get("exception")
+    exception_html = (
+        f'<pre style="margin:0.25rem 0 0;padding:0.5rem;background:#f7f7fb;border-radius:6px;'
+        f'font-size:0.75rem;overflow-x:auto;white-space:pre-wrap">{escape(exception)}</pre>'
+        if exception
+        else ""
+    )
+    return (
+        f'<div style="padding:0.4rem 0;border-bottom:1px solid #f0f0f0;font-size:0.85rem">'
+        f'<span style="color:#999">{escape(_fmt_ts(entry.get("ts")))}</span> '
+        f'<span style="color:{color};font-weight:600">{escape(level)}</span> '
+        f'<span style="color:#666">{escape(entry.get("logger", ""))}</span> '
+        f"{escape(entry.get('message', ''))}"
+        f"{exception_html}"
+        f"</div>"
+    )
+
+
 def render_dashboard(
     status: dict,
     upcoming: list[dict],
@@ -109,6 +144,8 @@ def render_dashboard(
     total_extractions: int,
     users: list[dict],
     owner_email: str,
+    audit_entries: list[dict],
+    log_lines: list[dict],
 ) -> str:
     session = status.get("session") or {}
     last_fetch = status.get("last_fetch") or {}
@@ -122,6 +159,12 @@ def render_dashboard(
     )
     user_rows = "\n".join(_user_row(u, owner_email) for u in users) or (
         '<tr><td colspan="9" style="text-align:center;color:#666">No registered users</td></tr>'
+    )
+    audit_rows = "\n".join(_audit_row(a) for a in audit_entries) or (
+        '<tr><td colspan="4" style="text-align:center;color:#666">No admin actions yet</td></tr>'
+    )
+    log_html = "\n".join(_log_line(entry) for entry in log_lines) or (
+        '<p style="text-align:center;color:#666">No log entries</p>'
     )
 
     return f"""<!doctype html>
@@ -195,6 +238,21 @@ def render_dashboard(
 {user_rows}
 </tbody>
 </table>
+</div>
+
+<h2>Admin action log <span class="count">({len(audit_entries)})</span></h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Detail</th></tr></thead>
+<tbody>
+{audit_rows}
+</tbody>
+</table>
+</div>
+
+<h2>Application logs <span class="count">(last {len(log_lines)} lines)</span></h2>
+<div class="scroll">
+{log_html}
 </div>
 
 <p style="color:#999;font-size:0.8rem;margin-top:2rem">Auto-refreshes every 60s. Calendar feed (token not shown here): /calendar/&lt;token&gt;.ics · Health JSON: /health</p>

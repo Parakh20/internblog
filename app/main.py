@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, select, text
 
-from app import auth
+from app import audit, auth
 from app.blog_client import BlogClient
 from app.calendar_feed import DeadlineEvent, build_ics
 from app.calendar_view import parse_week_param, render_week_view
@@ -19,8 +19,8 @@ from app.config import settings
 from app.dashboard import render_dashboard
 from app.db import SessionLocal, init_db
 from app.extraction import CALENDAR_CATEGORIES
-from app.logging_setup import setup_logging
-from app.models import AllowedEmail, Extraction, FetchLog, Post, User
+from app.logging_setup import read_recent_log_lines, setup_logging
+from app.models import AllowedEmail, AuditLog, Extraction, FetchLog, Post, User
 from app.notifications import send_telegram_message
 from app.pipeline import _is_upcoming, run_cycle
 from app.session_state import SessionMonitor
@@ -469,7 +469,21 @@ def admin_dashboard(user: User = Depends(get_current_user_or_redirect)) -> str:
             key=lambda r: parse_gmt(r["posted_at"]) or _EPOCH,
             reverse=True,
         )
-    return render_dashboard(status, upcoming, recent, total_extractions, users, settings.owner_email)
+
+        audit_entries = [
+            {
+                "ts": a.ts.isoformat() if a.ts else None,
+                "actor_email": a.actor_email,
+                "action": a.action,
+                "detail": a.detail,
+            }
+            for a in db.execute(select(AuditLog).order_by(AuditLog.ts.desc()).limit(100)).scalars().all()
+        ]
+
+    log_lines = read_recent_log_lines(settings.log_dir / "internblog.jsonl")
+    return render_dashboard(
+        status, upcoming, recent, total_extractions, users, settings.owner_email, audit_entries, log_lines
+    )
 
 
 @app.post("/admin/allowlist/add")
@@ -484,6 +498,7 @@ def admin_allowlist_add(
         if email and db.query(AllowedEmail).filter_by(email=email).one_or_none() is None:
             db.add(AllowedEmail(email=email))
             db.commit()
+            audit.record(db, user.email, "allowlist_add", detail=email)
     return RedirectResponse("/admin", status_code=303)
 
 
@@ -517,6 +532,7 @@ def admin_allowlist_remove(
             ).delete(synchronize_session=False)
             db.delete(existing)
         db.commit()
+        audit.record(db, user.email, "allowlist_remove", detail=email)
     return RedirectResponse("/admin", status_code=303)
 
 
@@ -525,6 +541,8 @@ def trigger_cycle(user: User = Depends(get_current_user_or_redirect)) -> dict:
     """Manually trigger one monitoring cycle (debugging aid). Admin-only."""
     if not auth.is_admin(user):
         raise HTTPException(status_code=404)
+    with SessionLocal() as db:
+        audit.record(db, user.email, "cycle_trigger")
     cycle_job()
     return {"triggered": True, "session": monitor.status()}
 
