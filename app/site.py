@@ -33,6 +33,7 @@ _STYLE = """
   .scroll { max-height: 480px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; }
   .scroll table { margin-top: 0; }
   .scroll thead th { position: sticky; top: 0; background: #fff; }
+  .search-box { width: 100%; max-width: 320px; padding: 0.4rem 0.6rem; margin-top: 0.75rem; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box; }
 """
 
 
@@ -286,14 +287,23 @@ def render_calendar_view(
   </div>
   <div class="card">
     <h2>Database <span style="color:#999;font-weight:400;font-size:0.85rem">({total_extractions} extractions total, newest post first)</span></h2>
+    <input type="search" class="search-box" placeholder="Search extractions..." oninput="filterRows(this, 'extractions-body', 'tr')">
     <div class="scroll">
     <table>
     <thead><tr><th>Category</th><th>Company</th><th>Role</th><th>Deadline</th><th>Link</th><th>Posted</th></tr></thead>
-    <tbody>
+    <tbody id="extractions-body">
     {recent_rows}
     </tbody>
     </table>
     </div>
   </div>
 </div>
+<script>
+function filterRows(input, containerId, rowSelector) {{
+  const q = input.value.toLowerCase();
+  document.querySelectorAll('#' + containerId + ' ' + rowSelector).forEach(function (row) {{
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  }});
+}}
+</script>
 </body></html>"""

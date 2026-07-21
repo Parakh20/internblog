@@ -42,7 +42,7 @@ def test_calendar_view_escapes_html_in_company_name():
         user,
         upcoming=[{"category": "new_listing", "company": "<script>alert(1)</script>", "role": None, "deadline": None, "link": "https://x"}],
     )
-    assert "<script>" not in html
+    assert "<script>alert(1)</script>" not in html
 
 
 def test_calendar_view_does_not_render_javascript_uri_as_clickable_link():
