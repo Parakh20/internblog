@@ -127,7 +127,7 @@ def _log_line(entry: dict) -> str:
         else ""
     )
     return (
-        f'<div style="padding:0.4rem 0;border-bottom:1px solid #f0f0f0;font-size:0.85rem">'
+        f'<div class="log-line" style="padding:0.4rem 0;border-bottom:1px solid #f0f0f0;font-size:0.85rem">'
         f'<span style="color:#999">{escape(_fmt_ts(entry.get("ts")))}</span> '
         f'<span style="color:{color};font-weight:600">{escape(level)}</span> '
         f'<span style="color:#666">{escape(entry.get("logger", ""))}</span> '
@@ -188,6 +188,7 @@ def render_dashboard(
   .scroll {{ max-height: 480px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 8px; }}
   .scroll table {{ margin-top: 0; }}
   .scroll thead th {{ position: sticky; top: 0; background: #fff; }}
+  .search-box {{ width: 100%; max-width: 320px; padding: 0.4rem 0.6rem; margin-top: 0.75rem; border: 1px solid #d0d0d0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box; }}
 </style>
 </head>
 <body>
@@ -217,10 +218,11 @@ def render_dashboard(
 </table>
 
 <h2>Database <span class="count">({total_extractions} extractions total, newest post first)</span></h2>
+<input type="search" class="search-box" placeholder="Search extractions..." oninput="filterRows(this, 'extractions-body', 'tr')">
 <div class="scroll">
 <table>
 <thead><tr><th>Category</th><th>Company</th><th>Role</th><th>Deadline</th><th>Link</th><th>Posted</th></tr></thead>
-<tbody>
+<tbody id="extractions-body">
 {recent_rows}
 </tbody>
 </table>
@@ -231,30 +233,41 @@ def render_dashboard(
   <input type="text" name="email" placeholder="email@example.com" required>
   <button type="submit">Add to allowlist</button>
 </form>
+<input type="search" class="search-box" placeholder="Search users..." oninput="filterRows(this, 'users-body', 'tr')">
 <div class="scroll">
 <table>
 <thead><tr><th>Email</th><th>Name</th><th>Status</th><th>Joined</th><th>Sync</th><th>Deadlines cal</th><th>Events cal</th><th>Telegram</th><th></th></tr></thead>
-<tbody>
+<tbody id="users-body">
 {user_rows}
 </tbody>
 </table>
 </div>
 
 <h2>Admin action log <span class="count">({len(audit_entries)})</span></h2>
+<input type="search" class="search-box" placeholder="Search audit log..." oninput="filterRows(this, 'audit-body', 'tr')">
 <div class="scroll">
 <table>
 <thead><tr><th>Time</th><th>Admin</th><th>Action</th><th>Detail</th></tr></thead>
-<tbody>
+<tbody id="audit-body">
 {audit_rows}
 </tbody>
 </table>
 </div>
 
 <h2>Application logs <span class="count">(last {len(log_lines)} lines)</span></h2>
-<div class="scroll">
+<input type="search" class="search-box" placeholder="Search logs..." oninput="filterRows(this, 'log-body', '.log-line')">
+<div class="scroll" id="log-body">
 {log_html}
 </div>
 
 <p style="color:#999;font-size:0.8rem;margin-top:2rem">Auto-refreshes every 60s. Calendar feed (token not shown here): /calendar/&lt;token&gt;.ics · Health JSON: /health</p>
+<script>
+function filterRows(input, containerId, rowSelector) {{
+  const q = input.value.toLowerCase();
+  document.querySelectorAll('#' + containerId + ' ' + rowSelector).forEach(function (row) {{
+    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+  }});
+}}
+</script>
 </body>
 </html>"""
