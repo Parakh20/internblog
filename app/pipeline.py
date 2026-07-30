@@ -36,6 +36,7 @@ from app.google_calendar import (
 )
 from app.models import Extraction, FetchLog, Post, TelegramNotification, User
 from app.notifications import edit_telegram_message, format_notification_message, send_telegram_message
+from app.roll_lookup import annotate_roll_departments
 from app.session_refresh import silent_refresh
 from app.session_state import SessionMonitor
 from app.snapshots import save_snapshot
@@ -100,7 +101,7 @@ def upsert_post(db: Session, wp_post: dict) -> Post:
     row.date_gmt = wp_post.get("date_gmt", "")
     row.modified_gmt = wp_post.get("modified_gmt", "")
     row.content_hash = post_hash(wp_post)
-    row.raw_html = content
+    row.raw_html = annotate_roll_departments(content, attempts=_build_extraction_attempts())
     row.removed = False
     from app.models import utcnow
 

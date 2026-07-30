@@ -155,3 +155,14 @@ def test_post_detail_strips_event_handler_attributes():
 def test_post_detail_preserves_allowed_formatting():
     html = render_post_detail(_post(raw_html='<p>Apply <a href="https://apply.example.com">here</a></p>'))
     assert '<a href="https://apply.example.com">here</a>' in html
+
+
+def test_post_detail_preserves_shortlist_table_structure():
+    raw_html = (
+        "<table><thead><tr><th>Roll Number</th><th>Name</th></tr></thead>"
+        "<tbody><tr><td>24B0945</td><td>Bhavesh Ramakrishnan Karthik</td></tr></tbody></table>"
+    )
+    html = render_post_detail(_post(raw_html=raw_html))
+    assert "<table>" in html
+    assert "<tr><th>Roll Number</th><th>Name</th></tr>" in html
+    assert "<tr><td>24B0945</td><td>Bhavesh Ramakrishnan Karthik</td></tr>" in html

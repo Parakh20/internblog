@@ -176,7 +176,10 @@ def render_terms_page() -> str:
 </body></html>"""
 
 
-_ALLOWED_POST_TAGS = ["p", "br", "b", "strong", "i", "em", "a", "ul", "ol", "li", "span", "div"]
+_ALLOWED_POST_TAGS = [
+    "p", "br", "b", "strong", "i", "em", "a", "ul", "ol", "li", "span", "div",
+    "table", "thead", "tbody", "tr", "th", "td",
+]
 _ALLOWED_POST_ATTRS = {"a": ["href"]}
 
 
