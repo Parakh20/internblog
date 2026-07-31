@@ -101,7 +101,7 @@ def upsert_post(db: Session, wp_post: dict) -> Post:
     row.date_gmt = wp_post.get("date_gmt", "")
     row.modified_gmt = wp_post.get("modified_gmt", "")
     row.content_hash = post_hash(wp_post)
-    row.raw_html = annotate_roll_departments(content, attempts=_build_extraction_attempts())
+    row.raw_html = annotate_roll_departments(content, attempts=build_extraction_attempts())
     row.removed = False
     from app.models import utcnow
 
@@ -110,7 +110,7 @@ def upsert_post(db: Session, wp_post: dict) -> Post:
     return row
 
 
-def _build_extraction_attempts() -> list[tuple]:
+def build_extraction_attempts() -> list[tuple]:
     attempts = []
     if settings.groq_api_key:
         groq_client = make_llm_client(settings.groq_base_url, settings.groq_api_key)
@@ -124,7 +124,7 @@ def _build_extraction_attempts() -> list[tuple]:
 def run_extraction(db: Session, row: Post) -> None:
     if not settings.extraction_enabled:
         return
-    attempts = _build_extraction_attempts()
+    attempts = build_extraction_attempts()
     if not attempts:
         logger.warning("no LLM API key set, skipping extraction for post %s", row.wp_id)
         return

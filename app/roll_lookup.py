@@ -166,7 +166,7 @@ def annotate_roll_departments(html: str, attempts: list[tuple[openai.OpenAI, str
     unchanged if there's no table or nothing in it matches - this only
     enriches, it never removes or alters existing content."""
     maps = load_roll_department_maps()
-    if not maps.by_roll or "<table" not in html.lower():
+    if not maps.by_roll or "<table" not in html.lower() or "<th>Department</th>" in html:
         return html
 
     matches = [_match_row(m.group(0), maps) for m in _ROW_RE.finditer(html)]
