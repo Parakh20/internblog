@@ -1,6 +1,5 @@
 """FastAPI app: health endpoint plus the APScheduler-driven monitoring loop."""
 
-import asyncio
 import logging
 import secrets
 from contextlib import asynccontextmanager
@@ -62,13 +61,15 @@ async def lifespan(app: FastAPI):
         id="monitor_cycle",
         max_instances=1,
         coalesce=True,
+        # First cycle runs right away on the scheduler's worker thread, not
+        # inline: after downtime it can mean hundreds of LLM calls, and
+        # awaiting it here kept the server from answering any request until
+        # it finished. The worker thread also has no asyncio loop, which
+        # session_refresh's sync_playwright() requires.
+        next_run_time=datetime.now(timezone.utc),
     )
     scheduler.start()
     logger.info("scheduler started, polling every %d minutes", settings.poll_interval_minutes)
-    # Run off the event loop thread: cycle_job() reaches session_refresh's
-    # sync_playwright(), which raises if called from a thread with a running
-    # asyncio loop - true here since lifespan itself runs on that loop.
-    await asyncio.to_thread(cycle_job)
     yield
     scheduler.shutdown(wait=False)
 

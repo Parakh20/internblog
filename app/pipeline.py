@@ -330,6 +330,10 @@ def apply_changes(db: Session, changes: ChangeSet) -> None:
     for wp_post in changes.new + changes.modified + changes.restored:
         row = upsert_post(db, wp_post)
         run_extraction(db, row)
+        # Commit per post: a catch-up cycle after downtime can take many
+        # minutes of rate-limited LLM calls, and a restart mid-cycle would
+        # otherwise discard every extraction done so far.
+        db.commit()
     for wp_id in changes.removed_wp_ids:
         row = db.query(Post).filter_by(wp_id=wp_id).one_or_none()
         if row is not None:

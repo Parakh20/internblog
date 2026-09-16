@@ -541,3 +541,30 @@ def test_push_calendar_event_for_user_leaves_deadline_category_as_point_in_time(
     pipeline.push_calendar_event_for_user(db, user, extraction, post)
 
     assert ends == [None]
+
+
+def test_apply_changes_keeps_earlier_posts_when_a_later_one_crashes(db, monkeypatch):
+    # Arrange: second post's extraction blows up mid-cycle.
+    from app.change_detection import ChangeSet
+    from app.models import Post
+
+    monkeypatch.setattr(pipeline, "annotate_roll_departments", lambda html, attempts=None: html)
+    monkeypatch.setattr(pipeline, "build_extraction_attempts", lambda: [])
+
+    def extraction(db_, row):
+        if row.wp_id == 2:
+            raise RuntimeError("crash")
+
+    monkeypatch.setattr(pipeline, "run_extraction", extraction)
+    posts = [
+        {"id": 1, "title": {"rendered": "one"}, "content": {"rendered": "a"}, "modified_gmt": "2026-09-01T00:00:00"},
+        {"id": 2, "title": {"rendered": "two"}, "content": {"rendered": "b"}, "modified_gmt": "2026-09-01T00:00:00"},
+    ]
+
+    # Act
+    with pytest.raises(RuntimeError):
+        pipeline.apply_changes(db, ChangeSet(new=posts))
+    db.rollback()
+
+    # Assert
+    assert [p.wp_id for p in db.query(Post).all()] == [1]
