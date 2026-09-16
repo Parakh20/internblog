@@ -68,8 +68,8 @@ sudo apt install -y docker-compose-plugin
 
 ## 4. Copy the project and one-time session state
 
-No GitHub remote is configured for this repo, so the project is pushed
-directly via `rsync` rather than `git clone`:
+Either `git clone` the repo on the server, or push the working tree with
+`rsync` (useful when deploying uncommitted changes):
 
 ```bash
 rsync -az --exclude='.git' --exclude='__pycache__' --exclude='.venv' \
@@ -160,11 +160,11 @@ calendar feed is for deadline tracking over time, not real-time alerts.
 4. Verify: `https://api.telegram.org/bot<token>/getWebhookInfo` should show
    your URL with no `last_error_message`.
 
-## Known issue: silent session refresh is broken under this deployment
+## Note: silent session refresh and the event loop
 
-`app/session_refresh.py` calls Playwright's **sync** API
-(`sync_playwright()`), but it runs inside FastAPI's async event loop
-(uvicorn), which raises `Playwright Sync API inside the asyncio loop` and
-prevents refresh from happening at all in this deployment shape. Needs
-`async_playwright` (or running the sync call in a thread executor) — not yet
-fixed.
+`app/session_refresh.py` uses Playwright's **sync** API, which raises
+`Playwright Sync API inside the asyncio loop` if called on uvicorn's event
+loop thread. Every caller runs off that thread: the scheduler job runs in
+APScheduler's worker thread, the startup cycle runs through
+`asyncio.to_thread` in `app/main.py`, and `POST /cycle` is a sync route
+(FastAPI's threadpool). Keep it that way if you add a new caller.

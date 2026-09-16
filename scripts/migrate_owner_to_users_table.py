@@ -18,7 +18,7 @@ from app.crypto import encrypt_token
 from app.db import SessionLocal, init_db
 from app.models import User
 
-OWNER_EMAIL = os.environ.get("OWNER_EMAIL", "sharmaparakh05@gmail.com")
+OWNER_EMAIL = os.environ["OWNER_EMAIL"]
 OWNER_GOOGLE_SUB = os.environ.get("OWNER_GOOGLE_SUB", "")  # optional, filled in on first real login anyway
 REFRESH_TOKEN = os.environ.get("GOOGLE_CALENDAR_REFRESH_TOKEN", "")
 CALENDAR_ID = os.environ.get("GOOGLE_CALENDAR_ID", "")

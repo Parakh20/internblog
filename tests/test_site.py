@@ -1,5 +1,13 @@
 from app.models import Post, User
-from app.site import render_calendar_view, render_login_page, render_post_detail
+from app.config import settings
+from app.site import (
+    render_access_denied_page,
+    render_calendar_view,
+    render_login_page,
+    render_post_detail,
+    render_privacy_page,
+    render_terms_page,
+)
 
 _EMPTY_STATUS = {"last_fetch": {"ts": None}, "poll_interval_minutes": 2}
 
@@ -160,9 +168,15 @@ def test_post_detail_preserves_allowed_formatting():
 def test_post_detail_preserves_shortlist_table_structure():
     raw_html = (
         "<table><thead><tr><th>Roll Number</th><th>Name</th></tr></thead>"
-        "<tbody><tr><td>24B0945</td><td>Bhavesh Ramakrishnan Karthik</td></tr></tbody></table>"
+        "<tbody><tr><td>24B0001</td><td>Asha Test Student</td></tr></tbody></table>"
     )
     html = render_post_detail(_post(raw_html=raw_html))
     assert "<table>" in html
     assert "<tr><th>Roll Number</th><th>Name</th></tr>" in html
-    assert "<tr><td>24B0945</td><td>Bhavesh Ramakrishnan Karthik</td></tr>" in html
+    assert "<tr><td>24B0001</td><td>Asha Test Student</td></tr>" in html
+
+
+def test_policy_pages_show_configured_owner_email_as_contact(monkeypatch):
+    monkeypatch.setattr(settings, "owner_email", "owner@example.com")
+    for page in (render_privacy_page(), render_terms_page(), render_access_denied_page()):
+        assert "owner@example.com" in page

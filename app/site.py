@@ -6,6 +6,7 @@ import re
 import bleach
 from html import escape
 
+from app.config import settings
 from app.dashboard import _extraction_row, _fmt_posted, _fmt_ts, _safe_link
 from app.models import Post, User
 from app.timeutil import IST, parse_ist
@@ -77,7 +78,7 @@ def render_access_denied_page() -> str:
   reviewed against placement office policy. Your Google account isn't on
   that list.</p>
   <p style="margin-top:2rem;font-size:0.8rem;color:#999">
-    Think this is a mistake? Contact sharmaparakh05@gmail.com.
+    Think this is a mistake? Contact {escape(settings.owner_email or "the site owner")}.
   </p>
 </div></div>
 </body></html>"""
@@ -140,7 +141,7 @@ def render_privacy_page() -> str:
     permissions page</a>.</p>
 
     <h2>Contact</h2>
-    <p>Questions about this policy: {escape("sharmaparakh05@gmail.com")}</p>
+    <p>Questions about this policy: {escape(settings.owner_email or "the site owner")}</p>
   </div>
 </div>
 </body></html>"""
@@ -170,7 +171,7 @@ def render_terms_page() -> str:
     discontinued or misused.</p>
 
     <h2>Contact</h2>
-    <p>Questions: {escape("sharmaparakh05@gmail.com")}</p>
+    <p>Questions: {escape(settings.owner_email or "the site owner")}</p>
   </div>
 </div>
 </body></html>"""

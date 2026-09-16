@@ -39,3 +39,13 @@ logs/
 .vscode/
 .idea/
 .gstack/
+
+# Personal/source documents (roll lists contain student names)
+*.pdf
+*.xlsx
+
+# Local agent/tool state
+.serena/
+.claude/
+.superpowers/
+.ruff_cache/

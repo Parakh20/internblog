@@ -131,7 +131,7 @@ def delete_session(db: DBSession, session_id: str | None) -> None:
 
 
 def is_admin(user: User) -> bool:
-    return user.email == settings.owner_email
+    return bool(settings.owner_email) and user.email == settings.owner_email
 
 
 def is_email_allowed(db: DBSession, email: str) -> bool:

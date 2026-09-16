@@ -1,0 +1,52 @@
+{
+  "_comment": "Synthetic posts shaped like the WordPress REST API (/wp/v2/posts) response. Companies, people and links are made up. Round 1 is the blog's first state; round 2 edits one post (deadline extended) and adds a shortlist post, so change detection has something to find.",
+  "round_1": [
+    {
+      "id": 9001,
+      "slug": "acme-robotics-summer-internship-2027",
+      "link": "https://example.com/blog/internship/acme-robotics-summer-internship-2027/",
+      "date_gmt": "2026-09-15T06:30:00",
+      "modified_gmt": "2026-09-15T06:30:00",
+      "title": {"rendered": "Acme Robotics &#8211; Summer Internship 2027"},
+      "content": {"rendered": "<p>Dear Students,</p><p>Acme Robotics is offering summer internships for the role of <strong>Software Engineering Intern (Perception)</strong>.</p><ul><li>Eligible branches: Computer Science and Engineering, Electrical Engineering</li><li>CGPA cutoff: 8.0</li><li>Stipend: INR 1,20,000 per month</li><li>Location: Bengaluru</li></ul><p>Apply at <a href=\"https://example.com/apply/acme\">https://example.com/apply/acme</a> by <strong>30th October 2026, 11:59 PM</strong>.</p><p>Regards,<br>Placement Office</p>"}
+    },
+    {
+      "id": 9002,
+      "slug": "globex-online-assessment",
+      "link": "https://example.com/blog/internship/globex-online-assessment/",
+      "date_gmt": "2026-09-15T09:00:00",
+      "modified_gmt": "2026-09-15T09:00:00",
+      "title": {"rendered": "Globex Analytics &#8211; Online Assessment Schedule"},
+      "content": {"rendered": "<p>Dear Students,</p><p>The online assessment for <strong>Globex Analytics (Quant Research Intern)</strong> will be held on <strong>4th November 2026 from 6:00 PM to 7:30 PM</strong>. The test link will be emailed to registered students.</p><p>Regards,<br>Placement Office</p>"}
+    },
+    {
+      "id": 9003,
+      "slug": "registration-reminder",
+      "link": "https://example.com/blog/internship/registration-reminder/",
+      "date_gmt": "2026-09-16T04:00:00",
+      "modified_gmt": "2026-09-16T04:00:00",
+      "title": {"rendered": "Reminder: Complete your internship registration"},
+      "content": {"rendered": "<p>Dear Students,</p><p>Please complete your internship season registration and upload your resume on the portal. No company-specific action is required.</p><p>Regards,<br>Placement Office</p>"}
+    }
+  ],
+  "round_2_changes": [
+    {
+      "id": 9001,
+      "slug": "acme-robotics-summer-internship-2027",
+      "link": "https://example.com/blog/internship/acme-robotics-summer-internship-2027/",
+      "date_gmt": "2026-09-15T06:30:00",
+      "modified_gmt": "2026-09-17T08:15:00",
+      "title": {"rendered": "Acme Robotics &#8211; Summer Internship 2027 [Deadline Extended]"},
+      "content": {"rendered": "<p>Dear Students,</p><p>The application deadline for <strong>Acme Robotics (Software Engineering Intern, Perception)</strong> has been <strong>extended to 6th November 2026, 11:59 PM</strong>. All other details remain unchanged.</p><p>Apply at <a href=\"https://example.com/apply/acme\">https://example.com/apply/acme</a>.</p><p>Regards,<br>Placement Office</p>"}
+    },
+    {
+      "id": 9004,
+      "slug": "initech-shortlist",
+      "link": "https://example.com/blog/internship/initech-shortlist/",
+      "date_gmt": "2026-09-17T10:00:00",
+      "modified_gmt": "2026-09-17T10:00:00",
+      "title": {"rendered": "Initech &#8211; Shortlist for Interviews"},
+      "content": {"rendered": "<p>Dear Students,</p><p>The following students are shortlisted for <strong>Initech (Product Management Intern)</strong> interviews:</p><table><thead><tr><th>Roll Number</th><th>Name</th></tr></thead><tbody><tr><td>24B0001</td><td>Asha Test Student</td></tr><tr><td>24B0002</td><td>Ravi Sample Kumar</td></tr></tbody></table><p>Regards,<br>Placement Office</p>"}
+    }
+  ]
+}

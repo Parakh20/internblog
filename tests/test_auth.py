@@ -130,6 +130,11 @@ def test_is_admin_matches_owner_email_only(monkeypatch):
     assert not auth.is_admin(User(email="someone-else@example.com"))
 
 
+def test_is_admin_is_false_for_everyone_when_owner_email_unset(monkeypatch):
+    monkeypatch.setattr(settings, "owner_email", "")
+    assert not auth.is_admin(User(email=""))
+
+
 def test_is_email_allowed_owner_always_allowed_regardless_of_table(db, monkeypatch):
     monkeypatch.setattr(settings, "owner_email", "owner@example.com")
     assert auth.is_email_allowed(db, "owner@example.com")

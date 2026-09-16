@@ -7,7 +7,7 @@ The PDF (one row per student) is organized as repeated sections:
     Program : B.Tech.
     Department : Aerospace Engineering
     Batch Year : 2024
-     1.   24B0001   Roumya Ranjan Nayak   Div: D2   Tutorial: T7   Lab : P7
+     1.   24B0001   Asha Test Student    Div: D2   Tutorial: T7   Lab : P7
      ...
 
 Re-run this whenever the placement office publishes an updated roll list.
