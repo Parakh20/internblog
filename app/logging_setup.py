@@ -2,11 +2,28 @@
 
 import json
 import logging
+import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 MAX_LOG_BYTES = 5 * 1024 * 1024
 BACKUP_COUNT = 5
+
+
+# Telegram's Bot API puts the bot token in the URL path, and httpx logs every
+# request URL at INFO. Without this, the token lands in the log file, the
+# console, and the /admin log viewer.
+_BOT_TOKEN_RE = re.compile(r"/bot\d+:[A-Za-z0-9_-]+")
+
+
+class RedactSecretsFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        redacted = _BOT_TOKEN_RE.sub("/bot<redacted>", message)
+        if redacted != message:
+            record.msg = redacted
+            record.args = None
+        return True
 
 
 class JsonLinesFormatter(logging.Formatter):
@@ -34,10 +51,12 @@ def setup_logging(log_dir: Path, level: int = logging.INFO) -> None:
         log_dir / "internblog.jsonl", maxBytes=MAX_LOG_BYTES, backupCount=BACKUP_COUNT
     )
     file_handler.setFormatter(JsonLinesFormatter())
+    file_handler.addFilter(RedactSecretsFilter())
     root.addHandler(file_handler)
 
     console = logging.StreamHandler()
     console.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s"))
+    console.addFilter(RedactSecretsFilter())
     root.addHandler(console)
 
 

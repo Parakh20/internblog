@@ -49,3 +49,34 @@ def test_read_recent_log_lines_skips_unparseable_lines(tmp_path):
 
     assert len(entries) == 1
     assert entries[0]["message"] == "good"
+
+
+def test_telegram_bot_token_is_redacted_from_file_and_console_logs(tmp_path, capsys):
+    # Arrange: httpx logs full request URLs, and Telegram puts the bot token
+    # in the URL path. Those logs are written to disk and shown on /admin.
+    import logging
+
+    from app.logging_setup import setup_logging
+
+    root = logging.getLogger()
+    saved_handlers = root.handlers[:]
+    root.handlers = []
+    try:
+        setup_logging(tmp_path)
+        url = "https://api.telegram.org/bot123456789:AAFakeToken_abc-XYZ/sendMessage"
+
+        # Act
+        logging.getLogger("httpx").info('HTTP Request: POST %s "HTTP/1.1 200 OK"', url)
+        for handler in root.handlers:
+            handler.flush()
+
+        # Assert
+        file_text = (tmp_path / "internblog.jsonl").read_text()
+        console_text = capsys.readouterr().err
+        for text in (file_text, console_text):
+            assert "AAFakeToken_abc-XYZ" not in text
+            assert "api.telegram.org/bot<redacted>/sendMessage" in text
+    finally:
+        for handler in root.handlers:
+            handler.close()
+        root.handlers = saved_handlers
