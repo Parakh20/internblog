@@ -1,4 +1,48 @@
-# Deployment: Azure for Students
+# Deployment
+
+## Current: Azure free account, 1 GB VM (since 2026-09-17)
+
+The original Azure for Students subscription ran out of credit and was
+disabled (see "History" below). The app now runs on a personal Azure free
+account:
+
+| Item | Value | Why |
+|------|-------|-----|
+| Region | `southindia` | Free-tier B-series sizes were `NotAvailableForSubscription` in `centralindia` |
+| VM | `Standard_B2ats_v2` (2 vCPU, 1 GB), Ubuntu 24.04 x64 | Covered by the 12-month free tier (750 h/month) |
+| Disk | 64 GB Premium SSD (P6) | Free-tier P6 allowance |
+| Compose file | `docker-compose.small.yml` | SQLite on the data volume instead of a Postgres container, plus a 2 GB swap file from cloud-init, so FastAPI, Caddy and on-demand Chromium fit in 1 GB |
+| Cost guard | Subscription spending limit on; `internblog-100inr` budget emails at 50%/100% actual and 100% forecast of INR 100/month | Budgets only alert, they don't stop resources. The spending limit is what prevents card charges during the trial |
+
+```bash
+RG=internblog-rg; L=southindia
+az group create -n $RG -l $L
+az network nsg create -g $RG -n internblog-nsg
+az network nsg rule create -g $RG --nsg-name internblog-nsg -n allow-ssh   --priority 100 --destination-port-ranges 22  --access Allow --protocol Tcp
+az network nsg rule create -g $RG --nsg-name internblog-nsg -n allow-http  --priority 110 --destination-port-ranges 80  --access Allow --protocol Tcp
+az network nsg rule create -g $RG --nsg-name internblog-nsg -n allow-https --priority 120 --destination-port-ranges 443 --access Allow --protocol Tcp
+az vm create -g $RG -n internblog-vm -l $L \
+  --image Canonical:ubuntu-24_04-lts:server:latest --size Standard_B2ats_v2 \
+  --admin-username azureuser --ssh-key-values ~/.ssh/<key>.pub \
+  --storage-sku Premium_LRS --os-disk-size-gb 64 --nsg internblog-nsg \
+  --public-ip-sku Standard --public-ip-address-allocation static \
+  --custom-data cloud-init.yaml   # installs Docker, creates a 2 GB swap file
+```
+
+Point DuckDNS at the new IP
+(`curl "https://www.duckdns.org/update?domains=<name>&token=<DUCKDNS_TOKEN>&ip=<ip>"`),
+rsync the project, `.env`, `storage_state.json`, `browser_profile/` and
+`data/internblog.db` (steps 4-5 below), then:
+
+```bash
+docker compose -f docker-compose.small.yml up -d --build
+```
+
+Only one copy of the monitor may run at a time: both copies would share
+and rotate the same SSO session cookie. Stop any local instance before
+copying the session files.
+
+## History: Azure for Students
 
 Deployed on an Azure for Students subscription (₹8,000 / $100 credit,
 12-month trial). Superseded the original Oracle Cloud plan: Oracle's Always

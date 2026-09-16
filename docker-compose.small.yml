@@ -1,0 +1,41 @@
+# Single-VM deployment for a 1 GB RAM server (e.g. Azure free-tier
+# B2ats_v2/B1s). Same app and Caddy as docker-compose.yml, but SQLite on the
+# data volume instead of a Postgres container, which doesn't fit alongside
+# FastAPI and the occasional headless Chromium in 1 GB. Pair with a swap file
+# on the host; see docs/deployment.md.
+#
+#   docker compose -f docker-compose.small.yml up -d --build
+services:
+  monitor:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:////app/data/internblog.db
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ./storage_state.json:/app/storage_state.json
+      - ./browser_profile:/app/browser_profile
+      - ./data:/app/data
+      - ./logs:/app/logs
+    mem_limit: 700m
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - monitor
+    ports:
+      - "80:80"
+      - "443:443"
+    env_file: .env
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    mem_limit: 100m
+
+volumes:
+  caddy_data:
+  caddy_config:
