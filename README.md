@@ -4,6 +4,9 @@ Watches the IIT Bombay internship blog and turns each new post into a
 calendar event and a Telegram message, so students stop refreshing the blog
 by hand.
 
+**Live:** https://internblog.duckdns.org (sign-in limited to allowlisted
+IIT Bombay students). Anyone can run the [demo](#try-it-without-an-iitb-login).
+
 ## The problem
 
 During internship season the placement office announces everything on one
